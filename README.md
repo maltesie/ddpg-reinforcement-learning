@@ -79,3 +79,10 @@ https://github.com/cosmoharrigan/rc-nfq.git
 We use the following implementation of the method for OpenAI Gym:
 
 https://github.com/stevenpjg/ddpg-aigym.git
+
+
+## Own Implementations:
+
+Our own implementations are located in the /code folder and usage is explained here:
+
+
