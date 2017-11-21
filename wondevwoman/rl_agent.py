@@ -53,11 +53,11 @@ class RLAgent:
     '''main AI unit, storing the world and making decisions'''
     def __init__(self, nb_players_per_side=1):
         # number of games to be played per "learning step"
-        self.batch_size = 1
-        self.learning_rate = 0.001 # 0.0001
+        self.batch_size = 10
+        self.learning_rate = 0.003 # 0.0001
         self.decay_rate = 0.99 # controls rmsprop sum leakiness
         # dim of observation vector (input)
-        i = 51 # cell heights (5x5), occupancy (5x5), bias (1)
+        i = 50 # cell heights (5x5), occupancy (5x5)
         # number of hidden neurons
         h = 200
         # dim of action probability vector (output)
@@ -105,7 +105,7 @@ class RLAgent:
         '''5x5 world block centered around specified player'''
         # TODO: enlarge "visible" block?
         px, py = self.players[player_idx].position
-        result = np.empty(5 * 5 * 2 + 1)
+        result = np.empty(5 * 5 * 2)
         # world map
         i = 0
         for x in range(px - 2, px + 3):
@@ -125,8 +125,6 @@ class RLAgent:
                 else:
                     result[i] = 1 if self.players[player_idx].friendly else -1
                 i += 1
-        # item to multiply bias with
-        result[i] = 1.
         return result
 
     def net_forward(self, x):
@@ -146,6 +144,7 @@ class RLAgent:
 
         dW1, dW2 = np.zeros_like(self.W1), np.zeros_like(self.W2)
 
+        # iterate over history of hiddens states, delta-probabilities, observations and discounted rewards
         for h, dp, x, disc_r in zip(self.history['h'], self.history['dp'], self.history['x'], disc_rs):
             dpr = dp * disc_r       # k2_delta = k2_error*nonlin(k2,deriv=True)
             dW2 += np.dot(dpr[:, np.newaxis], h[:, np.newaxis].T)     # k1.T.dot(k2_delta)
@@ -217,6 +216,7 @@ class RLAgent:
     def end_match(self, won):
         '''to be called when a game is over'''
         # we didn't get the last reward -> means we didn't ACCEPT-DEFEAT
+        illegal = False
         if len(self.history['r']) < len(self.history['x']):
             if won:
                 # append reward manually to match number of observations and actions
@@ -224,6 +224,10 @@ class RLAgent:
             else:
                 # lost by requesting an illegal action before, which is very bad, so punish hard
                 self.history['r'].append(-5)
+                illegal = True
+        elif not won:
+            # does not happpen
+            assert(False)
 
         if len(self.history['r']) > 1 and any(self.history['r']):  # 0-matches can happen
             self.games_played += 1
@@ -235,7 +239,7 @@ class RLAgent:
             disc_r /= std
             # get gradients with backprop and pimped rewards
             dW1, dW2 = self.net_backward(disc_r)
-            # aggregate gradients for later
+            # aggregate gradients for later use
             self.dW1 += dW1
             self.dW2 += dW2
         self.history.clear()
@@ -251,6 +255,8 @@ class RLAgent:
             self.rmspropW2 = self.decay_rate * self.rmspropW2 + (1 - self.decay_rate) * self.dW2**2
             self.W2 += self.learning_rate * self.dW2 / (np.sqrt(self.rmspropW2) + 0.00001)
             self.dW2 = np.zeros_like(self.dW2)
+
+        return illegal
 
     def shutdown(self):
         '''save state method called when ending a training session'''
