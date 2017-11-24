@@ -53,8 +53,8 @@ class RLAgent:
     '''main AI unit, storing the world and making decisions'''
     def __init__(self, nb_players_per_side=1):
         # number of games to be played per "learning step"
-        self.batch_size = 10
-        self.learning_rate = 0.003 # 0.0001
+        self.batch_size = 1000
+        self.learning_rate = 0.0005 # 0.0001
         self.decay_rate = 0.99 # controls rmsprop sum leakiness
         # dim of observation vector (input)
         i = 50 # cell heights (5x5), occupancy (5x5)
