@@ -3,6 +3,7 @@
 from game import Game
 from rl_agent import RLAgent
 from random_agent import Agent
+import weight_logger, weight_plotter
 
 import sys
 from collections import deque
@@ -15,6 +16,9 @@ if __name__ == '__main__':
     wins = deque()
     illegals = deque()
 
+    nb_curves = 15
+    log_filename = 'rl_trainer.log'
+    log = weight_logger.WeightLogger(log_filename, overwrite=True)
 
     try:
         while True:
@@ -27,6 +31,9 @@ if __name__ == '__main__':
             wins.append(int(won))
             while len(wins) > history_length:
                 wins.popleft()
+
+            if nb_games % agent.batch_size == 0:
+                log.log((agent.W1, agent.W2))
 
             # count losses due to illegal actions
             illegal = agent.end_match()
@@ -43,6 +50,7 @@ if __name__ == '__main__':
                 sys.stdout.flush()
 
     except KeyboardInterrupt:
-       agent.shutdown()
-       sys.stdout.write('\n')
-       print('Trained %i games.' % nb_games)
+        agent.shutdown()
+        sys.stdout.write('\n')
+        print('Trained %i games.' % nb_games)
+        plot = weight_plotter.plot(log_filename, nb_curves)
