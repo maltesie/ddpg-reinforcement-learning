@@ -5,12 +5,16 @@ from rl_agent import RLAgent
 from random_agent import Agent
 
 import sys
+from collections import deque
 
 if __name__ == '__main__':
     agent = RLAgent()
     opponent = Agent(1) # random agent
     nb_games = 0
-    wins = []
+    history_length = 10000 # number of wins/illegals considered "recent"
+    wins = deque()
+    illegals = deque()
+
 
     try:
         while True:
@@ -18,28 +22,26 @@ if __name__ == '__main__':
             while not game.over:
                 game.turn()
 
+            # count wins
             won = game.get_winning_team() == game.teams[0]
-            if won:
-                wins.append(1)
-            else:
-                wins.append(0)
-            while len(wins) > 1000:
-                del wins[0]
+            wins.append(int(won))
+            while len(wins) > history_length:
+                wins.popleft()
 
-            if nb_games % 10 == 0:
-                sys.stdout.write('\rgames: %i, recent win rate: %2.f%%   ' % (nb_games, 100. * sum(wins) / len(wins)))
-                sys.stdout.flush()
+            # count losses due to illegal actions
+            illegal = agent.end_match()
+            illegals.append(int(illegal))
+            while len(illegals) > history_length:
+                illegals.popleft()
 
-            if nb_games % 3000 == 0:
-                print('\nW1:')
-                print(agent.W1)
-                print('W2:')
-                print(agent.W2)
-
-            agent.end_match(won)
             nb_games += 1
             agent.reset_game()
             opponent.reset_game()
+
+            if nb_games % 100 == 0:
+                sys.stdout.write('\rgames: %i, recent win rate: %.2f%% illegal rate: %.2f%%  ' % (nb_games, 100. * sum(wins) / len(wins), 100. * sum(illegals) / len(illegals)))
+                sys.stdout.flush()
+
     except KeyboardInterrupt:
        agent.shutdown()
        sys.stdout.write('\n')

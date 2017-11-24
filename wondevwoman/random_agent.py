@@ -29,9 +29,12 @@ class Agent:
         self.world = None
         self.players = [Player(True) for _ in range(self.nb_players_per_side)] + [Player(False) for _ in range(self.nb_players_per_side)]
 
-    def set_world(self, world, scores):
+    def set_world(self, world):
         to_int = lambda c: 4 if c == '.' else int(c)
         self.world = [list(map(to_int, line)) for line in world]
+
+    def set_reward(self, scores):
+        pass
 
     def iter_neighbors(self, position):
         '''yields reachable neighbors of a cell'''

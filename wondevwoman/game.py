@@ -177,7 +177,7 @@ class Game(object):
         other_team = self.teams[1] if self.teams[0] == self.active_team else self.teams[0]
         agent = self.agents[team]
         # supply the agent with the state (and rewards of the previous action)
-        agent.set_world(self.world.get_grid_rows(), (self.scores[team], self.scores[other_team]))
+        agent.set_world(self.world.get_grid_rows())
         # sort players by active team
         players = [p for p in self.world.players if p.team == team] + [p for p in self.world.players if p.team != team]
         for i, player in enumerate(players):
@@ -196,8 +196,10 @@ class Game(object):
                 score_gain = self.world.apply_action(*action)
                 self.scores += score_gain
             else:
-                # requesting an illegal action ends the game
-                self.over = True
+                # requesting an illegal action disqualifies the team
+                self.team_disabled[team] = True
+                self.scores[team] -= 5
+            agent.set_reward((self.scores[team], self.scores[other_team]))
 
         # check if game is over
         if (all(self.team_disabled.values()) or

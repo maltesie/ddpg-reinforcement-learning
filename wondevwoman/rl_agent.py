@@ -81,17 +81,19 @@ class RLAgent:
     def reset_game(self):
         '''sets the agent up for a new game'''
         self.world = None
-        self.score = None
+        self.score = 0
         self.players = [Player(True) for _ in range(self.nb_players_per_side)] + [Player(False) for _ in range(self.nb_players_per_side)]
 
-    def set_world(self, world, scores):
+    def set_world(self, world):
         '''from the game's world row strings'''
         to_int = lambda c: 4 if c == '.' else int(c)
         self.world = [list(map(to_int, line)) for line in world]
+
+    def set_reward(self, scores):
+        '''own score first, opponent's score second'''
         # subtract opponent's score from our score
-        score = scores[0] - 1. * scores[1] # TODO: tweak
-        if self.score is not None:
-            self.history['r'].append(score - self.score)
+        score = scores[0] - 0. * scores[1] # TODO: tweak
+        self.history['r'].append(score - self.score)
         self.score = score
 
     def get_cell_player_idx(self, position):
@@ -213,21 +215,9 @@ class RLAgent:
                 r[i] += gamma * r[i+1]
         return r
 
-    def end_match(self, won):
+    def end_match(self):
         '''to be called when a game is over'''
-        # we didn't get the last reward -> means we didn't ACCEPT-DEFEAT
-        illegal = False
-        if len(self.history['r']) < len(self.history['x']):
-            if won:
-                # append reward manually to match number of observations and actions
-                self.history['r'].append(1)
-            else:
-                # lost by requesting an illegal action before, which is very bad, so punish hard
-                self.history['r'].append(-5)
-                illegal = True
-        elif not won:
-            # does not happpen
-            assert(False)
+        illegal = self.history['r'][-1] == -5
 
         if len(self.history['r']) > 1 and any(self.history['r']):  # 0-matches can happen
             self.games_played += 1
