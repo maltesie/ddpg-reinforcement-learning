@@ -146,10 +146,11 @@ class RLAgent:
 
         dW1, dW2 = np.zeros_like(self.W1), np.zeros_like(self.W2)
 
-        # iterate over history of hiddens states, delta-probabilities, observations and discounted rewards
-        for h, dp, x, disc_r in zip(self.history['h'], self.history['dp'], self.history['x'], disc_rs):
-            dpr = dp * disc_r       # k2_delta = k2_error*nonlin(k2,deriv=True)
-            dW2 += np.dot(dpr[:, np.newaxis], h[:, np.newaxis].T)     # k1.T.dot(k2_delta)
+        # iterate over history of observations, hiddens states, probabilities, delta-probabilities and discounted rewards
+        for x, h, p, dp, disc_r in zip(self.history['x'], self.history['h'], self.history['p'], self.history['dp'], disc_rs):
+            # the adjacent comments mark analogous lines in https://github.com/llSourcell/how_to_do_math_for_deep_learning/blob/master/demo.py
+            dpr = disc_r * dp * d_sigmoid(p)                        # k2_delta = k2_error*nonlin(k2,deriv=True)
+            dW2 += np.dot(dpr[:, np.newaxis], h[:, np.newaxis].T)   # k1.T.dot(k2_delta)
             dh = dpr.dot(self.W2)   # k1_error = k2_delta.dot(syn1.T)
             dh[h <= 0] = 0          # chain rule: set dh (outer) to 0 where h (inner) is <= 0, k1_delta = k1_error * nonlin(k1,deriv=True)
             dW1 += np.dot(x[:, np.newaxis], dh[:, np.newaxis].T).T  # k0.T.dot(k1_delta)
@@ -203,6 +204,7 @@ class RLAgent:
         # store values for backpropagation
         self.history['x'].append(x)
         self.history['h'].append(h)
+        self.history['p'].append(p)
         self.history['dp'].append(y - p)
         return action
 
