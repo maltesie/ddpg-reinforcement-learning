@@ -9,23 +9,28 @@ env = gym.make('CartPole-v0')
 
 batch_size = 1
 rms_decay_rate = 0.99
-learning_rate = 0.0005
+learning_rate = 0.000333
 
 # dim of observation vector (input)
 i = 4
 # number of hidden neurons
-h = 100 #20
+h1 = 100
+h2 = 100
 # dim of action probability vector (output)
 o = 1
 # init weights
-W1 = np.random.randn(h, i) / np.sqrt(i)
-W2 = np.random.randn(o, h) / np.sqrt(h)
+W1 = np.random.randn(h1, i) / np.sqrt(i)
+W2 = np.random.randn(h2, h1) / np.sqrt(h1)
+W3 = np.random.randn(o, h2) / np.sqrt(h2)
+
 # gradient buffers for accumulating the batch
 dW1 = np.zeros_like(W1)
 dW2 = np.zeros_like(W2)
+dW3 = np.zeros_like(W3)
 # rmsprop buffer (gradient descent optimizer)
 rmspropW1 = np.zeros_like(W1)
 rmspropW2 = np.zeros_like(W2)
+rmspropW3 = np.zeros_like(W3)
 # value storage to be filled during a match
 history = defaultdict(list)
 
@@ -67,30 +72,36 @@ def discount_rewards():
 
 def net_forward(x):
     '''forward pass through the net. returns action probability vector and hidden state.'''
-    # hidden layer
-    h = np.dot(W1, x)
-    # rectifier function (ReLU)
-    h = rect(h)
+    # hidden layer 1
+    h1 = np.dot(W1, x)
+    h1 = rect(h1)
+    # hidden layer 2
+    h2 = np.dot(W2, h1)
+    h2 = rect(h2)
     # output layer
-    p = np.dot(W2, h)
-    # sigmoid activation function
+    p = np.dot(W3, h2)
     p = sigmoid(p)
-    return p, h
+    return p, h1, h2
 
 def net_backward(rewards):
     '''does backpropagation with the accumulated value history and processed rewards and returns net gradients'''
 
-    dW1, dW2 = np.zeros_like(W1), np.zeros_like(W2)
+    dW1, dW2, dW3 = np.zeros_like(W1), np.zeros_like(W2), np.zeros_like(W3)
 
     # iterate over history of observations, hiddens states, probabilities, delta-probabilities and discounted rewards
-    for x, h, p, dp, r in zip(history['x'], history['h'], history['p'], history['dp'], rewards):
+    for x, h1, h2, p, dp, r in zip(history['x'], history['h1'], history['h2'], history['p'], history['dp'], rewards):
         dpr = r * dp * d_sigmoid(p)
-        dW2 += np.dot(dpr[:, np.newaxis], h[:, np.newaxis].T)
-        dh = dpr.dot(W2)
-        dh *= d_rect(h) # chain rule: set dh (outer) to 0 where h (inner) is <= 0
-        dW1 += np.dot(x[:, np.newaxis], dh[:, np.newaxis].T).T
+        dW3 += np.dot(dpr[:, np.newaxis], h2[:, np.newaxis].T)
 
-    return dW1, dW2
+        dh2 = dpr.dot(W3)
+        dh2 *= d_rect(h2)
+        dW2 += np.dot(dh2[:, np.newaxis], h1[:, np.newaxis].T)
+
+        dh1 = dh2.dot(W2)
+        dh1 *= d_rect(h1) # chain rule: set dh (outer) to 0 where h (inner) is <= 0
+        dW1 += np.dot(x[:, np.newaxis], dh1[:, np.newaxis].T).T
+
+    return dW1, dW2, dW3
 
 
 try:
@@ -103,8 +114,9 @@ try:
         nb_steps = 1
         while not done:
             history['x'].append(observation)
-            p, h = net_forward(observation)
-            history['h'].append(h)
+            p, h1, h2 = net_forward(observation)
+            history['h1'].append(h1)
+            history['h2'].append(h2)
             history['p'].append(p)
             action = 0 if p < np.random.random() else 1
             history['dp'].append(action - p)
@@ -128,10 +140,11 @@ try:
             std = np.std(r)
             r /= std
             # get gradients with backprop and pimped rewards
-            dW1, dW2 = net_backward(r)
+            ddW1, ddW2, ddW3 = net_backward(r)
             # aggregate gradients for later use
-            dW1 += dW1
-            dW2 += dW2
+            dW1 += ddW1
+            dW2 += ddW2
+            dW3 += ddW3
         history.clear()
 
         if nb_games % batch_size == 0:
@@ -146,7 +159,11 @@ try:
             W2 += learning_rate * dW2 / (np.sqrt(rmspropW2) + 0.00001)
             dW2 = np.zeros_like(dW2)
 
-            log.log((W1, W2))
+            rmspropW3 = rms_decay_rate * rmspropW3 + (1 - rms_decay_rate) * dW3**2
+            W3 += learning_rate * dW3 / (np.sqrt(rmspropW3) + 0.00001)
+            dW3 = np.zeros_like(dW3)
+
+            log.log((W1, W2, W3))
 
             print('\rgame #%i avg number of steps: %.2f (max: %i)' % (nb_games, avg_nb_steps, max_steps), end='', flush=True)
 
@@ -158,7 +175,7 @@ except KeyboardInterrupt:
     while not done:
         env.render()
 
-        p, h = net_forward(observation)
+        p, _, _ = net_forward(observation)
         action = 0 if p < np.random.random() else 1
         observation, reward, done, info = env.step(action)
         time.sleep(0.075)
