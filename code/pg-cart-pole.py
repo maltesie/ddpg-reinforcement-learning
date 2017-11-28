@@ -44,6 +44,10 @@ def d_sigmoid(x):
 def discount_rewards():
     gamma = 0.5 # reward back-through-time aggregation ratio
     r = np.array(history['r'], dtype=np.float64)
+
+    if np.all(r == 1):
+        return None
+
     for i in range(len(r) - 2, -1, -1):
         #r[i] = gamma * r[i] + (1 - gamma) * r[i+1]
         r[i] = r[i] + gamma * r[i+1]
@@ -79,6 +83,7 @@ def net_backward(rewards):
 
 try:
     nb_games = 0
+    max_steps = 0
     avg_nb_steps = None
     while True:
         observation = env.reset()
@@ -95,20 +100,26 @@ try:
             observation, reward, done, info = env.step(action)
             nb_steps += 1
 
-            history['r'].append(-1 if done else 1) # `reward` is always 1
+            history['r'].append(-1 if done and nb_steps < 201 else 1) # `reward` is always 1
 
         nb_games += 1
+        if avg_nb_steps is None:
+            avg_nb_steps = nb_steps
+        else:
+            avg_nb_steps = 0.99 * avg_nb_steps + 0.01 * nb_steps
+        max_steps = max(max_steps, nb_steps)
 
         r = discount_rewards()
 
-        r -= np.mean(r)
-        std = np.std(r)
-        r /= std
-        # get gradients with backprop and pimped rewards
-        dW1, dW2 = net_backward(r)
-        # aggregate gradients for later use
-        dW1 += dW1
-        dW2 += dW2
+        if r is not None:
+            r -= np.mean(r)
+            std = np.std(r)
+            r /= std
+            # get gradients with backprop and pimped rewards
+            dW1, dW2 = net_backward(r)
+            # aggregate gradients for later use
+            dW1 += dW1
+            dW2 += dW2
         history.clear()
 
         if nb_games % batch_size == 0:
@@ -125,11 +136,7 @@ try:
 
             log.log((W1, W2))
 
-            if avg_nb_steps is None:
-                avg_nb_steps = nb_steps
-            else:
-                avg_nb_steps = 0.9 * avg_nb_steps + 0.1 * nb_steps
-            print('\ravg number of steps: %.2f' % avg_nb_steps, end='', flush=True)
+            print('\rgame #%i avg number of steps: %.2f (max: %i)' % (nb_games, avg_nb_steps, max_steps), end='', flush=True)
 
 except KeyboardInterrupt:
     print('\nTrained %i games. Showtime!' % nb_games)
