@@ -41,6 +41,18 @@ def d_sigmoid(x):
     '''its derivative'''
     return np.exp(x) / ((np.exp(x) + 1.) ** 2.)
 
+def rect(x):
+    '''rectifier (ReLU) activation function'''
+    x[x < 0] *= 0 #.001
+    return x
+
+def d_rect(x):
+    '''its derivative'''
+    negatives = x < 0
+    x[negatives] = 0 #.001
+    x[np.logical_not(negatives)] = 1
+    return x
+
 def discount_rewards():
     gamma = 0.5 # reward back-through-time aggregation ratio
     r = np.array(history['r'], dtype=np.float64)
@@ -58,7 +70,7 @@ def net_forward(x):
     # hidden layer
     h = np.dot(W1, x)
     # rectifier function (ReLU)
-    h[h < 0] = 0
+    h = rect(h)
     # output layer
     p = np.dot(W2, h)
     # sigmoid activation function
@@ -75,7 +87,7 @@ def net_backward(rewards):
         dpr = r * dp * d_sigmoid(p)
         dW2 += np.dot(dpr[:, np.newaxis], h[:, np.newaxis].T)
         dh = dpr.dot(W2)
-        dh[h <= 0] = 0          # chain rule: set dh (outer) to 0 where h (inner) is <= 0
+        dh *= d_rect(h) # chain rule: set dh (outer) to 0 where h (inner) is <= 0
         dW1 += np.dot(x[:, np.newaxis], dh[:, np.newaxis].T).T
 
     return dW1, dW2
