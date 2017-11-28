@@ -109,6 +109,7 @@ try:
         # aggregate gradients for later use
         dW1 += dW1
         dW2 += dW2
+        history.clear()
 
         if nb_games % batch_size == 0:
             # time to learn
