@@ -47,15 +47,15 @@ def d_sigmoid(x):
     return np.exp(x) / ((np.exp(x) + 1.) ** 2.)
 
 def rect(x):
-    '''rectifier (ReLU) activation function'''
-    x[x < 0] *= 0 #.001
+    '''leaky rectifier (ReLU) activation function'''
+    x[x < 0] *= 0.1
     return x
 
 def d_rect(x):
     '''its derivative'''
     negatives = x < 0
-    x[negatives] = 0 #.001
-    x[np.logical_not(negatives)] = 1
+    x[:] = 1
+    x[negatives] = 0.1
     return x
 
 def discount_rewards():
