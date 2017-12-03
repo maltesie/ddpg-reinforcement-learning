@@ -5,7 +5,7 @@ import time
 
 from wondevwoman import weight_logger, weight_plotter
 
-env = gym.make('CartPole-v0')
+env = gym.make('CartPole-v1')
 
 batch_size = 1
 rms_decay_rate = 0.99
@@ -124,7 +124,7 @@ try:
             observation, reward, done, info = env.step(action)
             nb_steps += 1
 
-            history['r'].append(-1 if done and nb_steps < 201 else 1) # `reward` is always 1
+            history['r'].append(-1 if done and nb_steps < 501 else 1) # `reward` is always 1
 
         nb_games += 1
         if avg_nb_steps is None:
