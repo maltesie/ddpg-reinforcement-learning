@@ -68,14 +68,13 @@ def get_normalized_state(x):
     return y
 
 def discount_rewards():
-    gamma = 0.5 # reward back-through-time aggregation ratio
+    gamma = 0.99 # reward back-through-time aggregation ratio
     r = np.array(history['r'], dtype=np.float64)
 
     if np.all(r == 1):
         return None
 
     for i in range(len(r) - 2, -1, -1):
-        #r[i] = gamma * r[i] + (1 - gamma) * r[i+1]
         r[i] = r[i] + gamma * r[i+1]
     return r
 
