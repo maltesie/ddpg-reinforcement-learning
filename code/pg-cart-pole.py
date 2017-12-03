@@ -17,7 +17,7 @@ i = 4
 h1 = 100
 h2 = 100
 # dim of action probability vector (output)
-o = 1
+o = 1 + i # 1 action + model
 # init weights
 W1 = np.random.randn(h1, i) / np.sqrt(i)
 W2 = np.random.randn(h2, h1) / np.sqrt(h1)
@@ -58,6 +58,15 @@ def d_rect(x):
     x[negatives] = 0.1
     return x
 
+def get_normalized_state(x):
+    '''shifts and scales the 0..1 net output vector to match the state bounds'''
+    y = np.zeros_like(x)
+    y[0] = (x[0] + 2.4) / 4.8
+    y[1] = (x[1] + 4.) / 8.
+    y[2] = (x[2] + 0.20943951) / 0.41887902
+    y[3] = (x[3] + 4.) / 8.
+    return y
+
 def discount_rewards():
     gamma = 0.5 # reward back-through-time aggregation ratio
     r = np.array(history['r'], dtype=np.float64)
@@ -88,12 +97,14 @@ def net_backward(rewards):
 
     dW1, dW2, dW3 = np.zeros_like(W1), np.zeros_like(W2), np.zeros_like(W3)
 
-    # iterate over history of observations, hiddens states, probabilities, delta-probabilities and discounted rewards
-    for x, h1, h2, p, dp, r in zip(history['x'], history['h1'], history['h2'], history['p'], history['dp'], rewards):
-        dpr = r * dp * d_sigmoid(p)
-        dW3 += np.dot(dpr[:, np.newaxis], h2[:, np.newaxis].T)
+    # iterate over history of observations, hiddens states, net outputs, actions taken, rewards and next observations
+    for x, h1, h2, p, a, r, xn in zip(history['x'], history['h1'], history['h2'], history['p'], history['a'], rewards, history['xn']):
+        # action gradient and next observation estimation error
+        dp = np.hstack(([r * (a - p[0])], get_normalized_state(xn) - p[1:])) * d_sigmoid(p)
+        #dp = r * (a - p[0]) * d_sigmoid(p) # model-free variant
+        dW3 += np.dot(dp[:, np.newaxis], h2[:, np.newaxis].T)
 
-        dh2 = dpr.dot(W3)
+        dh2 = dp.dot(W3)
         dh2 *= d_rect(h2)
         dW2 += np.dot(dh2[:, np.newaxis], h1[:, np.newaxis].T)
 
@@ -118,13 +129,14 @@ try:
             history['h1'].append(h1)
             history['h2'].append(h2)
             history['p'].append(p)
-            action = 0 if p < np.random.random() else 1
-            history['dp'].append(action - p)
+            action = 0 if p[0] < np.random.random() else 1
+            history['a'].append(action)
 
             observation, reward, done, info = env.step(action)
             nb_steps += 1
 
             history['r'].append(-1 if done and nb_steps < 501 else 1) # `reward` is always 1
+            history['xn'].append(observation)
 
         nb_games += 1
         if avg_nb_steps is None:
@@ -176,6 +188,6 @@ except KeyboardInterrupt:
         env.render()
 
         p, _, _ = net_forward(observation)
-        action = 0 if p < np.random.random() else 1
+        action = 0 if p[0] < np.random.random() else 1
         observation, reward, done, info = env.step(action)
         time.sleep(0.075)
