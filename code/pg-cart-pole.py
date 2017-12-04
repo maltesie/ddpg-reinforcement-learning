@@ -5,38 +5,6 @@ import time
 
 from wondevwoman import weight_logger, weight_plotter
 
-env = gym.make('CartPole-v1')
-
-batch_size = 1
-rms_decay_rate = 0.99
-learning_rate = 0.000333
-
-# dim of observation vector (input)
-i = 4
-# number of hidden neurons
-h1 = 100
-h2 = 100
-# dim of action probability vector (output)
-o = 1 + i # 1 action + model
-# init weights
-W1 = np.random.randn(h1, i) / np.sqrt(i)
-W2 = np.random.randn(h2, h1) / np.sqrt(h1)
-W3 = np.random.randn(o, h2) / np.sqrt(h2)
-
-# gradient buffers for accumulating the batch
-dW1 = np.zeros_like(W1)
-dW2 = np.zeros_like(W2)
-dW3 = np.zeros_like(W3)
-# rmsprop buffer (gradient descent optimizer)
-rmspropW1 = np.zeros_like(W1)
-rmspropW2 = np.zeros_like(W2)
-rmspropW3 = np.zeros_like(W3)
-# value storage to be filled during a match
-history = defaultdict(list)
-
-log_filename = 'pg-cart-pole.log'
-log = weight_logger.WeightLogger(log_filename, overwrite=True)
-
 
 def sigmoid(x):
     '''an activation function'''
@@ -58,135 +26,206 @@ def d_rect(x):
     x[negatives] = 0.1
     return x
 
-def get_normalized_state(x):
-    '''shifts and scales the 0..1 net output vector to match the state bounds'''
-    y = np.zeros_like(x)
-    y[0] = (x[0] + 2.4) / 4.8
-    y[1] = (x[1] + 4.) / 8.
-    y[2] = (x[2] + 0.20943951) / 0.41887902
-    y[3] = (x[3] + 4.) / 8.
-    return y
 
-def discount_rewards():
-    gamma = 0.99 # reward back-through-time aggregation ratio
-    r = np.array(history['r'], dtype=np.float64)
+class Agent(object):
+    def __init__(self,
+            batch_size = 1,
+            learning_rate = 0.000333,
+            rms_decay_rate = 0.99,
+            hidden_neurons1 = 100,
+            hidden_neurons2 = 100,
+            learn_model = True,
+            log_filename = 'pg-cart-pole.log'):
 
-    if np.all(r == 1):
-        return None
+        self.batch_size = batch_size
+        self.learning_rate = learning_rate
+        self.rms_decay_rate = rms_decay_rate
 
-    for i in range(len(r) - 2, -1, -1):
-        r[i] = r[i] + gamma * r[i+1]
-    return r
+        # dim of observation vector (input)
+        i = 4
+        # dim of action probability vector (output)
+        o = 1 + i # 1 action + model
+        # init weights
+        self.W1 = np.random.randn(hidden_neurons1, i) / np.sqrt(i)
+        self.W2 = np.random.randn(hidden_neurons2, hidden_neurons1) / np.sqrt(hidden_neurons1)
+        self.W3 = np.random.randn(o, hidden_neurons2) / np.sqrt(hidden_neurons2)
 
-def net_forward(x):
-    '''forward pass through the net. returns action probability vector and hidden state.'''
-    # hidden layer 1
-    h1 = np.dot(W1, x)
-    h1 = rect(h1)
-    # hidden layer 2
-    h2 = np.dot(W2, h1)
-    h2 = rect(h2)
-    # output layer
-    p = np.dot(W3, h2)
-    p = sigmoid(p)
-    return p, h1, h2
+        # gradient buffers for accumulating the batch
+        self.dW1 = np.zeros_like(self.W1)
+        self.dW2 = np.zeros_like(self.W2)
+        self.dW3 = np.zeros_like(self.W3)
+        # rmsprop buffer (gradient descent optimizer)
+        self.rmspropW1 = np.zeros_like(self.W1)
+        self.rmspropW2 = np.zeros_like(self.W2)
+        self.rmspropW3 = np.zeros_like(self.W3)
+        # value storage to be filled during a match
+        self.history = defaultdict(list)
 
-def net_backward(rewards):
-    '''does backpropagation with the accumulated value history and processed rewards and returns net gradients'''
+        self.log = None
+        if log_filename:
+            self.log = weight_logger.WeightLogger(log_filename, overwrite=True)
 
-    dW1, dW2, dW3 = np.zeros_like(W1), np.zeros_like(W2), np.zeros_like(W3)
+        # number of played/trained games
+        self.nb_games = 0
 
-    # iterate over history of observations, hiddens states, net outputs, actions taken, rewards and next observations
-    for x, h1, h2, p, a, r, xn in zip(history['x'], history['h1'], history['h2'], history['p'], history['a'], rewards, history['xn']):
-        # action gradient and next observation estimation error
-        dp = np.hstack(([r * (a - p[0])], get_normalized_state(xn) - p[1:])) * d_sigmoid(p)
-        #dp = r * (a - p[0]) * d_sigmoid(p) # model-free variant
-        dW3 += np.dot(dp[:, np.newaxis], h2[:, np.newaxis].T)
+    def get_normalized_state(self, x):
+        '''shifts and scales the 0..1 net output vector to match the state bounds'''
+        y = np.zeros_like(x)
+        y[0] = (x[0] + 2.4) / 4.8
+        y[1] = (x[1] + 4.) / 8.
+        y[2] = (x[2] + 0.20943951) / 0.41887902
+        y[3] = (x[3] + 4.) / 8.
+        return y
 
-        dh2 = dp.dot(W3)
-        dh2 *= d_rect(h2)
-        dW2 += np.dot(dh2[:, np.newaxis], h1[:, np.newaxis].T)
+    def get_discounted_rewards(self):
+        '''processes the rewards from history and returns them suited for training'''
+        gamma = 0.99 # reward back-through-time aggregation ratio
+        r = np.array(self.history['r'], dtype=np.float64)
 
-        dh1 = dh2.dot(W2)
-        dh1 *= d_rect(h1) # chain rule: set dh (outer) to 0 where h (inner) is <= 0
-        dW1 += np.dot(x[:, np.newaxis], dh1[:, np.newaxis].T).T
+        if np.all(r == 1):
+            return None
 
-    return dW1, dW2, dW3
+        for i in range(len(r) - 2, -1, -1):
+            r[i] = r[i] + gamma * r[i+1]
+        return r
 
+    def net_forward(self, x):
+        '''forward pass through the net. returns action probability vector and hidden states'''
+        # hidden layer 1
+        h1 = np.dot(self.W1, x)
+        h1 = rect(h1)
+        # hidden layer 2
+        h2 = np.dot(self.W2, h1)
+        h2 = rect(h2)
+        # output layer
+        p = np.dot(self.W3, h2)
+        p = sigmoid(p)
+        return p, h1, h2
 
-try:
-    nb_games = 0
-    max_steps = 0
-    avg_nb_steps = None
-    while True:
-        observation = env.reset()
-        done = False
-        nb_steps = 1
-        while not done:
-            history['x'].append(observation)
-            p, h1, h2 = net_forward(observation)
-            history['h1'].append(h1)
-            history['h2'].append(h2)
-            history['p'].append(p)
-            action = 0 if p[0] < np.random.random() else 1
-            history['a'].append(action)
+    def net_backward(self, rewards):
+        '''does backpropagation with the accumulated value history and processed rewards and returns net gradients'''
+        dW1, dW2, dW3 = np.zeros_like(self.W1), np.zeros_like(self.W2), np.zeros_like(self.W3)
 
-            observation, reward, done, info = env.step(action)
-            nb_steps += 1
+        # iterate over history of observations, hiddens states, net outputs, actions taken, rewards and next observations
+        for x, h1, h2, p, a, r, xn in zip(self.history['x'], self.history['h1'], self.history['h2'], self.history['p'], self.history['a'], rewards, self.history['xn']):
+            # action gradient and next observation estimation error
+            dp = np.hstack(([r * (a - p[0])], self.get_normalized_state(xn) - p[1:])) * d_sigmoid(p)
+            #dp = r * (a - p[0]) * d_sigmoid(p) # model-free variant
+            dW3 += np.dot(dp[:, np.newaxis], h2[:, np.newaxis].T)
 
-            history['r'].append(-1 if done and nb_steps < 501 else 1) # `reward` is always 1
-            history['xn'].append(observation)
+            dh2 = dp.dot(self.W3)
+            dh2 *= d_rect(h2)
+            dW2 += np.dot(dh2[:, np.newaxis], h1[:, np.newaxis].T)
 
-        nb_games += 1
-        if avg_nb_steps is None:
-            avg_nb_steps = nb_steps
-        else:
-            avg_nb_steps = 0.99 * avg_nb_steps + 0.01 * nb_steps
-        max_steps = max(max_steps, nb_steps)
+            dh1 = dh2.dot(self.W2)
+            dh1 *= d_rect(h1) # chain rule: set dh (outer) to 0 where h (inner) is <= 0
+            dW1 += np.dot(x[:, np.newaxis], dh1[:, np.newaxis].T).T
 
-        r = discount_rewards()
+        return dW1, dW2, dW3
 
+    def get_action(self, observation, training=True):
+        '''asks the net what action to do given an `observation` and does some
+           book-keeping except when training is disabled'''
+        p, h1, h2 = self.net_forward(observation)
+        action = 0 if p[0] < np.random.random() else 1
+        if training:
+            self.history['x'].append(observation)
+            self.history['h1'].append(h1)
+            self.history['h2'].append(h2)
+            self.history['p'].append(p)
+            self.history['a'].append(action)
+        return action
+
+    def add_feedback(self, reward, next_observation):
+        '''appends a reward and the actual next observation to history'''
+        self.history['r'].append(reward)
+        self.history['xn'].append(next_observation)
+
+    def end_game(self):
+        '''shuts down a game and triggers a learning step when needed'''
+        r = self.get_discounted_rewards()
         if r is not None:
             r -= np.mean(r)
             std = np.std(r)
             r /= std
             # get gradients with backprop and pimped rewards
-            ddW1, ddW2, ddW3 = net_backward(r)
+            dW1, dW2, dW3 = self.net_backward(r)
             # aggregate gradients for later use
-            dW1 += ddW1
-            dW2 += ddW2
-            dW3 += ddW3
-        history.clear()
+            self.dW1 += dW1
+            self.dW2 += dW2
+            self.dW3 += dW3
+        self.history.clear()
 
-        if nb_games % batch_size == 0:
+        if self.nb_games % self.batch_size == 0:
             # time to learn
-            # do fancy rmsprop-optimized gradient descent
-            rmspropW1 = rms_decay_rate * rmspropW1 + (1 - rms_decay_rate) * dW1**2
-            W1 += learning_rate * dW1 / (np.sqrt(rmspropW1) + 0.00001)
-            # clear gradient buffer
-            dW1 = np.zeros_like(dW1)
-            # and second layer
-            rmspropW2 = rms_decay_rate * rmspropW2 + (1 - rms_decay_rate) * dW2**2
-            W2 += learning_rate * dW2 / (np.sqrt(rmspropW2) + 0.00001)
-            dW2 = np.zeros_like(dW2)
+            self.update_weights()
 
-            rmspropW3 = rms_decay_rate * rmspropW3 + (1 - rms_decay_rate) * dW3**2
-            W3 += learning_rate * dW3 / (np.sqrt(rmspropW3) + 0.00001)
-            dW3 = np.zeros_like(dW3)
+    def update_weights(self):
+        '''flushes the gradient buffers'''
+        # do fancy rmsprop-optimized gradient descent
+        self.rmspropW1 = self.rms_decay_rate * self.rmspropW1 + (1 - self.rms_decay_rate) * self.dW1**2
+        self.W1 += self.learning_rate * self.dW1 / (np.sqrt(self.rmspropW1) + 0.00001)
+        # clear gradient buffer
+        self.dW1 = np.zeros_like(self.dW1)
 
-            log.log((W1, W2, W3))
+        # and second layer
+        self.rmspropW2 = self.rms_decay_rate * self.rmspropW2 + (1 - self.rms_decay_rate) * self.dW2**2
+        self.W2 += self.learning_rate * self.dW2 / (np.sqrt(self.rmspropW2) + 0.00001)
+        self.dW2 = np.zeros_like(self.dW2)
 
-            print('\rgame #%i avg number of steps: %.2f (max: %i)' % (nb_games, avg_nb_steps, max_steps), end='', flush=True)
+        # third
+        self.rmspropW3 = self.rms_decay_rate * self.rmspropW3 + (1 - self.rms_decay_rate) * self.dW3**2
+        self.W3 += self.learning_rate * self.dW3 / (np.sqrt(self.rmspropW3) + 0.00001)
+        self.dW3 = np.zeros_like(self.dW3)
+
+        if self.log:
+            self.log.log((self.W1, self.W2, self.W3))
+
+    def train_games(self, environment, n):
+        '''trains on `n` games in `environment`'''
+        nb_stepss = [] # list of steps achieved per game
+        for i in range(n):
+            observation = environment.reset()
+            done = False
+            nb_steps = 0
+            while not done:
+                action = self.get_action(observation)
+
+                observation, reward, done, info = environment.step(action)
+                nb_steps += 1
+
+                # `reward` is always 1, so use `done` instead
+                self.add_feedback(-1 if done and nb_steps < 500 else 1, observation)
+
+            # store
+            nb_stepss.append(nb_steps)
+            self.nb_games += 1
+
+            self.end_game()
+
+        return nb_stepss
+
+
+env = gym.make('CartPole-v1')
+agent = Agent()
+
+try:
+    # not the actual training batch size, only for statistics and status updates
+    batch_size = 100
+    while True:
+        nb_steps = agent.train_games(env, batch_size)
+        avg_nb_steps = sum(nb_steps) / float(batch_size)
+        max_steps = max(nb_steps)
+        print('\rgame #%i avg number of steps: %.2f (max: %i)' % (agent.nb_games, avg_nb_steps, max_steps), end='', flush=True)
 
 except KeyboardInterrupt:
-    print('\nTrained %i games. Showtime!' % nb_games)
+    print('\nTrained %i games. Showtime!' % agent.nb_games)
 
     observation = env.reset()
     done = False
     while not done:
         env.render()
 
-        p, _, _ = net_forward(observation)
-        action = 0 if p[0] < np.random.random() else 1
+        action = agent.get_action(observation, training=False)
         observation, reward, done, info = env.step(action)
         time.sleep(0.075)
