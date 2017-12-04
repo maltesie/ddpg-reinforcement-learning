@@ -40,11 +40,15 @@ class Agent(object):
         self.batch_size = batch_size
         self.learning_rate = learning_rate
         self.rms_decay_rate = rms_decay_rate
+        self.learn_model = learn_model
 
         # dim of observation vector (input)
         i = 4
         # dim of action probability vector (output)
-        o = 1 + i # 1 action + model
+        if learn_model:
+            o = 1 + i # 1 action + model
+        else:
+            o = 1 # only action
         # init weights
         self.W1 = np.random.randn(hidden_neurons1, i) / np.sqrt(i)
         self.W2 = np.random.randn(hidden_neurons2, hidden_neurons1) / np.sqrt(hidden_neurons1)
@@ -98,7 +102,7 @@ class Agent(object):
         h2 = np.dot(self.W2, h1)
         h2 = rect(h2)
         # output layer
-        p = np.dot(self.W3, h2)
+        p = np.asarray(np.dot(self.W3, h2)) # enforce array form even if it is a scalar in model-free mode
         p = sigmoid(p)
         return p, h1, h2
 
@@ -108,9 +112,12 @@ class Agent(object):
 
         # iterate over history of observations, hiddens states, net outputs, actions taken, rewards and next observations
         for x, h1, h2, p, a, r, xn in zip(self.history['x'], self.history['h1'], self.history['h2'], self.history['p'], self.history['a'], rewards, self.history['xn']):
-            # action gradient and next observation estimation error
-            dp = np.hstack(([r * (a - p[0])], self.get_normalized_state(xn) - p[1:])) * d_sigmoid(p)
-            #dp = r * (a - p[0]) * d_sigmoid(p) # model-free variant
+            if self.learn_model:
+                # action gradient and next observation estimation error
+                dp = np.hstack(([r * (a - p[0])], self.get_normalized_state(xn) - p[1:])) * d_sigmoid(p)
+            else:
+                # model-free variant
+                dp = r * (a - p[0]) * d_sigmoid(p)
             dW3 += np.dot(dp[:, np.newaxis], h2[:, np.newaxis].T)
 
             dh2 = dp.dot(self.W3)
