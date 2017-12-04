@@ -212,27 +212,71 @@ class Agent(object):
 
         return nb_stepss
 
+    def evaluate_games(self, environment, n):
+        '''performs `n` runs in `environment` and returns the average score'''
+        nb_stepss = [] # list of steps achieved per game
+        for i in range(n):
+            observation = environment.reset()
+            done = False
+            nb_steps = 0
+            while not done:
+                action = self.get_action(observation, training=False)
+                observation, _, done, _ = environment.step(action)
+                nb_steps += 1
+            nb_stepss.append(nb_steps)
+        return sum(nb_stepss) / float(n)
+
 
 env = gym.make('CartPole-v1')
-agent = Agent()
 
-try:
-    # not the actual training batch size, only for statistics and status updates
+mode = 'evaluate' # 'demo'
+
+if mode == 'demo':
+    agent = Agent()
+    try:
+        # not the actual batch training size, only for statistics and status updates
+        batch_size = 100
+        while True:
+            nb_steps = agent.train_games(env, batch_size)
+            avg_nb_steps = sum(nb_steps) / float(batch_size)
+            max_steps = max(nb_steps)
+            print('\rgame #%i avg number of steps: %.2f (max: %i)' % (agent.nb_games, avg_nb_steps, max_steps), end='', flush=True)
+
+    except KeyboardInterrupt:
+        print('\nTrained %i games. Showtime!' % agent.nb_games)
+
+        observation = env.reset()
+        done = False
+        while not done:
+            env.render()
+
+            action = agent.get_action(observation, training=False)
+            observation, reward, done, info = env.step(action)
+            time.sleep(0.075)
+
+elif mode == 'evaluate':
+    import matplotlib.pyplot as plt
+    # instances to train and average
+    nb_trainings = 50
+    # number of games to train on
+    nb_games = 2000
+    # steps size (in games) at which to perform an evaluation
     batch_size = 100
-    while True:
-        nb_steps = agent.train_games(env, batch_size)
-        avg_nb_steps = sum(nb_steps) / float(batch_size)
-        max_steps = max(nb_steps)
-        print('\rgame #%i avg number of steps: %.2f (max: %i)' % (agent.nb_games, avg_nb_steps, max_steps), end='', flush=True)
+    # instances to evaluate and average
+    nb_evaluations = 10
 
-except KeyboardInterrupt:
-    print('\nTrained %i games. Showtime!' % agent.nb_games)
-
-    observation = env.reset()
-    done = False
-    while not done:
-        env.render()
-
-        action = agent.get_action(observation, training=False)
-        observation, reward, done, info = env.step(action)
-        time.sleep(0.075)
+    scoress = [[] for _ in range(nb_trainings)]
+    for t in range(nb_trainings):
+        print('\rtrainging instance %i/%i' % (t, nb_trainings))
+        agent = Agent(learn_model=True, log_filename=False)
+        while agent.nb_games < nb_games:
+            print('\rgame %i/%i' % (agent.nb_games, nb_games), end='', flush=True)
+            agent.train_games(env, batch_size)
+            avg_steps_achieved = agent.evaluate_games(env, nb_evaluations)
+            scoress[t].append(avg_steps_achieved)
+    scoress = np.array(scoress, dtype=np.float64)
+    scores = np.mean(scoress, axis=0)
+    print()
+    print(list(scores))
+    plt.plot(scores)
+    plt.show()
