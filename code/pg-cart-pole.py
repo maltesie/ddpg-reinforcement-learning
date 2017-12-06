@@ -256,8 +256,12 @@ if mode == 'demo':
 
 elif mode == 'evaluate':
     import matplotlib.pyplot as plt
+
+    # hyperparameters
+    param = {'learn_model': False}
+
     # instances to train and average
-    nb_trainings = 50
+    nb_trainings = 100
     # number of games to train on
     nb_games = 2000
     # steps size (in games) at which to perform an evaluation
@@ -267,16 +271,26 @@ elif mode == 'evaluate':
 
     scoress = [[] for _ in range(nb_trainings)]
     for t in range(nb_trainings):
-        print('\rtrainging instance %i/%i' % (t, nb_trainings))
-        agent = Agent(learn_model=True, log_filename=False)
+        print('\rtrainging instance %i/%i' % (t + 1, nb_trainings))
+        agent = Agent(**param, log_filename=False)
         while agent.nb_games < nb_games:
             print('\rgame %i/%i' % (agent.nb_games, nb_games), end='', flush=True)
             agent.train_games(env, batch_size)
             avg_steps_achieved = agent.evaluate_games(env, nb_evaluations)
             scoress[t].append(avg_steps_achieved)
+    # include hyperparameters in filename where to store the individual scores of each training run
+    filename = 'eval-scores-%s.txt' % '.'.join([str(k) + '-' + str(v) for k, v in param.items()])
+    with open(filename, 'w') as f:
+        [f.write(str(scores) + '\n') for scores in scoress]
+    # compute mean of scores across training runs and standard error of the mean
     scoress = np.array(scoress, dtype=np.float64)
     scores = np.mean(scoress, axis=0)
+    stderr = scoress.std(axis=0, ddof=1) / np.sqrt(scoress.shape[0])
     print()
-    print(list(scores))
-    plt.plot(scores)
+    print(param)
+    print('scores:', list(scores))
+    print('stderr:', list(stderr))
+    X = range(batch_size, nb_games + batch_size, batch_size)
+    plt.plot(X, scores)
+    plt.errorbar(X, scores, stderr)
     plt.show()
