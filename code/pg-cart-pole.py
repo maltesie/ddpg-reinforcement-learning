@@ -102,7 +102,7 @@ class Agent(object):
         h2 = np.dot(self.W2, h1)
         h2 = rect(h2)
         # output layer
-        p = np.asarray(np.dot(self.W3, h2)) # enforce array form even if it is a scalar in model-free mode
+        p = np.dot(self.W3, h2)
         p = sigmoid(p)
         return p, h1, h2
 
