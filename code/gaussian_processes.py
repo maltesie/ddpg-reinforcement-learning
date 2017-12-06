@@ -19,7 +19,7 @@ policy = CategoricalMLPPolicy(
 
 x = []
 y = []
-for i in range(10):
+for i in range(5):
     observation = env.reset()
     done = False
     while not done:
@@ -30,7 +30,8 @@ for i in range(10):
         y.append(observation)
 
 x = np.array(x)
-x -= x.mean(axis=0)
+mean = x.mean(axis=0)
+#x -= mean
 #print(x)
 y = np.array(y)
 
@@ -39,21 +40,56 @@ kernel = RBF(10, (1e-2, 1e2))
 gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=9)
 
 gp.fit(x, y.reshape(-1,4))
+
+x,y = [], []
+observation = env.reset()
+done = False
+while not done:
+    action, probs = policy.get_action(observation)
+    x.append([action, *observation])
+    
+    observation, reward, done, info = env.step(action)
+    y.append(observation)
+
+x = np.array(x)
+#x -= mean
+#print(x)
+y = np.array(y)
+
 y_pred, sigma = gp.predict(x, return_std=True)
 
-x = x[:,1]
+feature = 0
 fig = plt.figure()
 fig.clf()
-plt.plot(x, y, 'r.', markersize=10, label=u'Observations')
-plt.plot(x, y_pred, 'b-', label=u'Prediction')
-"""
-plt.fill(np.concatenate([x, x[::-1]]),
-         np.concatenate([y_pred - 1.9600 * sigma,
-                        (y_pred + 1.9600 * sigma)[::-1]]),
-         alpha=.5, fc='b', ec='None', label='95% confidence interval')
-plt.xlabel('$x$')
-plt.ylabel('$f(x)$')
-"""
-plt.ylim(-3, 3)
+plt.plot(x[:,feature+1], y[:,feature], 'r.', markersize=10, label=u'Observations')
+plt.plot(x[:,feature+1], y_pred[:,feature], 'b-', label=u'Prediction')
+plt.ylim(np.vstack((y[:,feature],y_pred[:,feature])).min(), np.vstack((y[:,feature],y_pred[:,feature])).max())
+plt.legend(loc='upper left')
+plt.show()
+
+feature = 1
+fig = plt.figure()
+fig.clf()
+plt.plot(x[:,feature+1], y[:,feature], 'r.', markersize=10, label=u'Observations')
+plt.plot(x[:,feature+1], y_pred[:,feature], 'b-', label=u'Prediction')
+plt.ylim(np.vstack((y[:,feature],y_pred[:,feature])).min(), np.vstack((y[:,feature],y_pred[:,feature])).max())
+plt.legend(loc='upper left')
+plt.show()
+
+feature = 2
+fig = plt.figure()
+fig.clf()
+plt.plot(x[:,feature+1], y[:,feature], 'r.', markersize=10, label=u'Observations')
+plt.plot(x[:,feature+1], y_pred[:,feature], 'b-', label=u'Prediction')
+plt.ylim(np.vstack((y[:,feature],y_pred[:,feature])).min(), np.vstack((y[:,feature],y_pred[:,feature])).max())
+plt.legend(loc='upper left')
+plt.show()
+
+feature = 3
+fig = plt.figure()
+fig.clf()
+plt.plot(x[:,feature+1], y[:,feature], 'r.', markersize=10, label=u'Observations')
+plt.plot(x[:,feature+1], y_pred[:,feature], 'b-', label=u'Prediction')
+plt.ylim(np.vstack((y[:,feature],y_pred[:,feature])).min(), np.vstack((y[:,feature],y_pred[:,feature])).max())
 plt.legend(loc='upper left')
 plt.show()
