@@ -19,7 +19,7 @@ policy = CategoricalMLPPolicy(
 
 x = []
 y = []
-for i in range(5):
+for i in range(3):
     observation = env.reset()
     done = False
     while not done:
@@ -32,7 +32,7 @@ for i in range(5):
 x = np.array(x)
 mean = x.mean(axis=0)
 #x -= mean
-#print(x)
+print(len(x))
 y = np.array(y)
 
 # Instanciate a Gaussian Process model
@@ -52,44 +52,24 @@ while not done:
     y.append(observation)
 
 x = np.array(x)
-#x -= mean
-#print(x)
 y = np.array(y)
 
 y_pred, sigma = gp.predict(x, return_std=True)
 
-feature = 0
-fig = plt.figure()
-fig.clf()
-plt.plot(x[:,feature+1], y[:,feature], 'r.', markersize=10, label=u'Observations')
-plt.plot(x[:,feature+1], y_pred[:,feature], 'b-', label=u'Prediction')
-plt.ylim(np.vstack((y[:,feature],y_pred[:,feature])).min(), np.vstack((y[:,feature],y_pred[:,feature])).max())
-plt.legend(loc='upper left')
-plt.show()
+y_pred_pure = np.empty((x.shape[0]+1,x.shape[1]))
+y_pred_pure[:-1,0] = x[:,0]
+y_pred_pure[0] = x[0]
+for i in range(len(x)):
+    y_pred_pure[i+1,1:] = gp.predict(y_pred_pure[i].reshape(1,-1), return_std=False)
 
-feature = 1
-fig = plt.figure()
-fig.clf()
-plt.plot(x[:,feature+1], y[:,feature], 'r.', markersize=10, label=u'Observations')
-plt.plot(x[:,feature+1], y_pred[:,feature], 'b-', label=u'Prediction')
-plt.ylim(np.vstack((y[:,feature],y_pred[:,feature])).min(), np.vstack((y[:,feature],y_pred[:,feature])).max())
-plt.legend(loc='upper left')
-plt.show()
+y_pred_pure = y_pred_pure[1:,1:]
 
-feature = 2
-fig = plt.figure()
-fig.clf()
-plt.plot(x[:,feature+1], y[:,feature], 'r.', markersize=10, label=u'Observations')
-plt.plot(x[:,feature+1], y_pred[:,feature], 'b-', label=u'Prediction')
-plt.ylim(np.vstack((y[:,feature],y_pred[:,feature])).min(), np.vstack((y[:,feature],y_pred[:,feature])).max())
-plt.legend(loc='upper left')
-plt.show()
+for feature in range(4):
+    fig = plt.figure()
+    fig.clf()
+    plt.plot(range(len(x[:,feature+1])), y[:,feature], 'r.', markersize=10, label=u'Observations')
+    plt.plot(range(len(x[:,feature+1])), y_pred_pure[:,feature], 'b-', label=u'Prediction')
+    plt.ylim(np.vstack((y[:,feature],y_pred[:,feature])).min(), np.vstack((y[:,feature],y_pred[:,feature])).max())
+    plt.legend(loc='upper left')
+    plt.show()
 
-feature = 3
-fig = plt.figure()
-fig.clf()
-plt.plot(x[:,feature+1], y[:,feature], 'r.', markersize=10, label=u'Observations')
-plt.plot(x[:,feature+1], y_pred[:,feature], 'b-', label=u'Prediction')
-plt.ylim(np.vstack((y[:,feature],y_pred[:,feature])).min(), np.vstack((y[:,feature],y_pred[:,feature])).max())
-plt.legend(loc='upper left')
-plt.show()
