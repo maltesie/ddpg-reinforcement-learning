@@ -19,7 +19,7 @@ policy = CategoricalMLPPolicy(
 
 x = []
 y = []
-for i in range(3):
+for i in range(1):
     observation = env.reset()
     done = False
     while not done:
@@ -64,12 +64,16 @@ for i in range(len(x)):
 
 y_pred_pure = y_pred_pure[1:,1:]
 
+y_labels = ["Cart Position", "Cart Velocity", "Pole Angle", "Pole Velocity At Tip"]
 for feature in range(4):
     fig = plt.figure()
     fig.clf()
     plt.plot(range(len(x[:,feature+1])), y[:,feature], 'r.', markersize=10, label=u'Observations')
-    plt.plot(range(len(x[:,feature+1])), y_pred_pure[:,feature], 'b-', label=u'Prediction')
+    plt.plot(range(len(x[:,feature+1])), y_pred[:,feature], 'b-', label=u'Prediction')
+    plt.plot(range(len(x[:,feature+1])), y_pred_pure[:,feature], 'g-', label=u'Pure Prediction')
     plt.ylim(np.vstack((y[:,feature],y_pred[:,feature])).min(), np.vstack((y[:,feature],y_pred[:,feature])).max())
+    plt.xlabel("time step")
+    plt.ylabel(y_labels[feature])
     plt.legend(loc='upper left')
     plt.show()
 
