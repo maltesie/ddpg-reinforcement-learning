@@ -229,10 +229,13 @@ class Agent(object):
 
 env = gym.make('CartPole-v1')
 
-mode = 'evaluate' # 'demo'
+# hyperparameters
+param = {'learn_model': True}
+
+mode = 'evaluate' # 'demo', 'evaluate'
 
 if mode == 'demo':
-    agent = Agent()
+    agent = Agent(**param)
     try:
         # not the actual batch training size, only for statistics and status updates
         batch_size = 100
@@ -256,9 +259,6 @@ if mode == 'demo':
 
 elif mode == 'evaluate':
     import matplotlib.pyplot as plt
-
-    # hyperparameters
-    param = {'learn_model': False}
 
     # instances to train and average
     nb_trainings = 100
