@@ -14,16 +14,16 @@ def d_sigmoid(x):
     '''its derivative'''
     return np.exp(x) / ((np.exp(x) + 1.) ** 2.)
 
-def rect(x):
-    '''leaky rectifier (ReLU) activation function'''
-    x[x < 0] *= 0.1
+def rect(x, leakiness=0.1):
+    '''(leaky) rectifier (ReLU) activation function'''
+    x[x < 0] *= leakiness
     return x
 
-def d_rect(x):
+def d_rect(x, leakiness=0.1):
     '''its derivative'''
     negatives = x < 0
     x[:] = 1
-    x[negatives] = 0.1
+    x[negatives] = leakiness
     return x
 
 
@@ -35,12 +35,14 @@ class Agent(object):
             hidden_neurons1 = 100,
             hidden_neurons2 = 100,
             learn_model = True,
+            rect_leakiness=0.1,
             log_filename = 'pg-cart-pole.log'):
 
         self.batch_size = batch_size
         self.learning_rate = learning_rate
         self.rms_decay_rate = rms_decay_rate
         self.learn_model = learn_model
+        self.rect_leakiness = rect_leakiness
 
         # dim of observation vector (input)
         i = 4
@@ -97,10 +99,10 @@ class Agent(object):
         '''forward pass through the net. returns action probability vector and hidden states'''
         # hidden layer 1
         h1 = np.dot(self.W1, x)
-        h1 = rect(h1)
+        h1 = rect(h1, self.rect_leakiness)
         # hidden layer 2
         h2 = np.dot(self.W2, h1)
-        h2 = rect(h2)
+        h2 = rect(h2, self.rect_leakiness)
         # output layer
         p = np.dot(self.W3, h2)
         p = sigmoid(p)
@@ -121,11 +123,11 @@ class Agent(object):
             dW3 += np.dot(dp[:, np.newaxis], h2[:, np.newaxis].T)
 
             dh2 = dp.dot(self.W3)
-            dh2 *= d_rect(h2)
+            dh2 *= d_rect(h2, self.rect_leakiness)
             dW2 += np.dot(dh2[:, np.newaxis], h1[:, np.newaxis].T)
 
             dh1 = dh2.dot(self.W2)
-            dh1 *= d_rect(h1) # chain rule: set dh (outer) to 0 where h (inner) is <= 0
+            dh1 *= d_rect(h1, self.rect_leakiness) # chain rule: set dh (outer) to 0 where h (inner) is <= 0
             dW1 += np.dot(x[:, np.newaxis], dh1[:, np.newaxis].T).T
 
         return dW1, dW2, dW3
@@ -238,7 +240,7 @@ else:
 env = gym.make('CartPole-v1')
 
 # hyperparameters
-param = {'learn_model': True}
+param = {'learn_model': True, 'rect_leakiness': 0.1}
 
 
 if mode == 'demo':
