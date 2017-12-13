@@ -1,7 +1,7 @@
 import gym
 import numpy as np
 from collections import defaultdict
-import time
+import time, sys
 
 from wondevwoman import weight_logger, weight_plotter
 
@@ -227,12 +227,19 @@ class Agent(object):
         return sum(nb_stepss) / float(n)
 
 
+if len(sys.argv) > 1:
+    mode = sys.argv[1]
+    if not mode in ['demo', 'evaluate']:
+        print('usage: ' + sys.argv[0] + ' [demo|evaluate]')
+        sys.exit(1)
+else:
+    mode = 'evaluate' # 'demo', 'evaluate'
+
 env = gym.make('CartPole-v1')
 
 # hyperparameters
 param = {'learn_model': True}
 
-mode = 'evaluate' # 'demo', 'evaluate'
 
 if mode == 'demo':
     agent = Agent(**param)
