@@ -106,6 +106,19 @@ class Agent(object):
         p = sigmoid(p)
         return p, h1, h2
 
+    def test_gradients(self, x, a, r):
+        h1 = rect(np.dot(self.W1, x))
+        h2 = rect(np.dot(self.W2, h1))
+        p = sigmoid(np.dot(self.W3, h2))
+        #dW3 = r * (2 * a - 1) * h2 * d_sigmoid(self.W3 * h2)
+        #dW3 = r * (a - h2 * d_sigmoid(self.W3 * h2))
+
+        # equal to net_backward
+        #dW3 = r * (a - p[0]) * np.outer(d_sigmoid(np.dot(self.W3, h2)), h2)
+
+        dW3 = r * (2 * a - 1) * np.outer(d_sigmoid(np.dot(self.W3, h2)), h2)
+        return h1, h2, dW3
+
     def net_backward(self, rewards):
         '''does backpropagation with the accumulated value history and processed rewards and returns net gradients'''
         dW1, dW2, dW3 = np.zeros_like(self.W1), np.zeros_like(self.W2), np.zeros_like(self.W3)
@@ -114,19 +127,43 @@ class Agent(object):
         for x, h1, h2, p, a, r, xn in zip(self.history['x'], self.history['h1'], self.history['h2'], self.history['p'], self.history['a'], rewards, self.history['xn']):
             if self.learn_model:
                 # action gradient and next observation estimation error
-                dp = np.hstack(([r * (a - p[0])], self.get_normalized_state(xn) - p[1:])) * d_sigmoid(p)
+                dp = np.hstack(([r * (a - p[0])], self.get_normalized_state(xn) - p[1:])) * d_sigmoid(p) #* d_sigmoid(np.dot(self.W3, h2))
             else:
                 # model-free variant
-                dp = r * (a - p[0]) * d_sigmoid(p)
-            dW3 += np.dot(dp[:, np.newaxis], h2[:, np.newaxis].T)
+                #TODO: replace asterisk * (because of model-based mode...)
+                dp = r * (a - p) * d_sigmoid(np.dot(self.W3, h2)) #* d_sigmoid(p)
+            # d/dW3 = r * rect(W2 * rect(W1 * x)) * sigmoid'(W3 * rect(W2 * rect(W1 * x)))
+            #       = r * h2 * sigmoid'(W3 * h2)
+            dW3 += np.outer(dp, h2) # np.dot(dp[:, np.newaxis], h2[:, np.newaxis].T)
+            #assert(np.allclose(np.outer(dp, h2), np.dot(dp[:, np.newaxis], h2[:, np.newaxis].T)))
+
+            #h1_, h2_, dW3_ = self.test_gradients(x, a, r)
+            #print()
+            #print(dW3_[0,0], np.outer(dp, h2)[0,0])
+            #assert(np.allclose(dW3_, np.outer(dp, h2)))
+            #assert(np.all(np.sign(dW3_) == np.sign(np.outer(dp, h2))))
 
             dh2 = dp.dot(self.W3)
             dh2 *= d_rect(h2)
-            dW2 += np.dot(dh2[:, np.newaxis], h1[:, np.newaxis].T)
+            #dW2 += np.dot(dh2[:, np.newaxis], h1[:, np.newaxis].T)
+            dW2 += np.outer(dh2, h1)
+            #assert(np.allclose(np.outer(dh2, h1), np.dot(dh2[:, np.newaxis], h1[:, np.newaxis].T)))
+
+            # # d/dW2 = r * W3 * rect(W1 * x) * rect'(W2 * rect(W1 * x)) * sigmoid'(W3 * rect(W2 * rect(W1 * x)))
+            # # r * W3 * h1 * rect'(W2 * h1) * sigmoid'(W3 * h2)
+            # dh2 = dp.dot(self.W3) * d_rect(np.dot(self.W2, h1))
+            # dW2 += np.outer(dh2, h1)
 
             dh1 = dh2.dot(self.W2)
             dh1 *= d_rect(h1) # chain rule: set dh (outer) to 0 where h (inner) is <= 0
-            dW1 += np.dot(x[:, np.newaxis], dh1[:, np.newaxis].T).T
+            #dW1 += np.dot(x[:, np.newaxis], dh1[:, np.newaxis].T).T
+            dW1 += np.outer(dh1, x)
+            #assert(np.allclose(np.outer(dh1, x), np.dot(x[:, np.newaxis], dh1[:, np.newaxis].T).T))
+
+            # # d/dW3 = r * W2 * W3 * x * rect'(W1 * x) * rect'(W2 * rect(W1 * x)) * sigmoid'(W3 * rect(W2 * rect(W1 * x)))
+            # # d/dW3 = r * W2 * W3 * x * rect'(W1 * x) * rect'(W2 * h1) * sigmoid'(W3 * h2)
+            # dh1 = dh2.dot(self.W2) * d_rect(np.dot(self.W1, x))
+            # dW1 += np.outer(dh1, x)
 
         return dW1, dW2, dW3
 
