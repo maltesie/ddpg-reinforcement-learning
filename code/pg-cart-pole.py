@@ -27,6 +27,64 @@ def d_rect(x, leakiness=0.1):
     return x
 
 
+class Layer(object):
+    def __init__(self, shape, activation_function, activation_function_derivative, rms_decay_rate=0.99, learning_rate=0.000333):
+        assert(len(shape) == 2)
+        self.shape = shape
+        self.neurons = shape[0]
+        self.activation_function = activation_function
+        self.activation_function_derivative = activation_function_derivative
+        self.rms_decay_rate = rms_decay_rate
+        self.learning_rate = learning_rate
+        # layer weights
+        self.W = np.random.randn(*shape) / np.sqrt(shape[1])
+        # gradient buffer (to be aggregated until update_weights())
+        self.dW = np.zeros_like(self.W)
+        # rms gradient descent optimizer
+        self.rmsprop = np.zeros_like(self.W)
+
+    def update_weights(self):
+        '''flushes the gradient buffer'''
+        # do fancy rmsprop-optimized gradient descent
+        self.rmsprop = self.rms_decay_rate * self.rmsprop + (1 - self.rms_decay_rate) * self.dW**2
+        self.W += self.learning_rate * self.dW / (np.sqrt(self.rmsprop) + 0.00001)
+        # clear gradient buffer
+        self.dW = np.zeros_like(self.dW)
+
+
+class NeuralNet(object):
+    def __init__(self, input_dimensions):
+        self.input_dimensions = input_dimensions
+        self.layers = []
+
+    def add_layer(self, neurons, activation_function, activation_function_derivative):
+        prev_layer_neurons = self.input_dimensions if len(self.layers) == 0 else self.layers[-1].neurons
+        layer = Layer((neurons, prev_layer_neurons), activation_function, activation_function_derivative)
+        self.layers.append(layer)
+
+    def forward(self, x):
+        '''forward pass through the net with input x. returns all layer states from input -> output.'''
+        states = [x]
+        for layer in self.layers:
+            state = layer.activation_function(layer.W.dot(states[-1]))
+            states.append(state)
+        return states
+
+    def backpropagate(self, states, error):
+        '''backpropagation. stores weight deltas in the layers' gradient buffer respectively.'''
+        for state, layer in reversed(list(zip(states, self.layers))):
+            dW = np.outer(error, state)
+            layer.dW += dW
+            error = error.dot(layer.W) * layer.activation_function_derivative(state)
+
+    def backpropagate_batch(self, states_batch, error_batch):
+        for states, error in zip(states_batch, error_batch):
+            self.backpropagate(states, error)
+
+    def update_weights(self):
+        [l.update_weights() for l in self.layers]
+
+
 class Agent(object):
     def __init__(self,
             batch_size = 1,
@@ -51,19 +109,12 @@ class Agent(object):
             o = 1 + i # 1 action + model
         else:
             o = 1 # only action
-        # init weights
-        self.W1 = np.random.randn(hidden_neurons1, i) / np.sqrt(i)
-        self.W2 = np.random.randn(hidden_neurons2, hidden_neurons1) / np.sqrt(hidden_neurons1)
-        self.W3 = np.random.randn(o, hidden_neurons2) / np.sqrt(hidden_neurons2)
 
-        # gradient buffers for accumulating the batch
-        self.dW1 = np.zeros_like(self.W1)
-        self.dW2 = np.zeros_like(self.W2)
-        self.dW3 = np.zeros_like(self.W3)
-        # rmsprop buffer (gradient descent optimizer)
-        self.rmspropW1 = np.zeros_like(self.W1)
-        self.rmspropW2 = np.zeros_like(self.W2)
-        self.rmspropW3 = np.zeros_like(self.W3)
+        self.net = NeuralNet(i)
+        self.net.add_layer(hidden_neurons1, lambda x: rect(x, rect_leakiness), lambda x: d_rect(x, rect_leakiness))
+        self.net.add_layer(hidden_neurons2, lambda x: rect(x, rect_leakiness), lambda x: d_rect(x, rect_leakiness))
+        self.net.add_layer(o, sigmoid, d_sigmoid)
+
         # value storage to be filled during a match
         self.history = defaultdict(list)
 
@@ -93,49 +144,17 @@ class Agent(object):
 
         for i in range(len(r) - 2, -1, -1):
             r[i] = r[i] + gamma * r[i+1]
+
+        # standardize the rewards to be unit normal (helps control the gradient estimator variance)
+        r -= np.mean(r)
+        r /= np.std(r)
+
         return r
-
-    def net_forward(self, x):
-        '''forward pass through the net. returns action probability vector and hidden states'''
-        # hidden layer 1
-        h1 = np.dot(self.W1, x)
-        h1 = rect(h1, self.rect_leakiness)
-        # hidden layer 2
-        h2 = np.dot(self.W2, h1)
-        h2 = rect(h2, self.rect_leakiness)
-        # output layer
-        p = np.dot(self.W3, h2)
-        p = sigmoid(p)
-        return p, h1, h2
-
-    def net_backward(self, rewards):
-        '''does backpropagation with the accumulated value history and processed rewards and returns net gradients'''
-        dW1, dW2, dW3 = np.zeros_like(self.W1), np.zeros_like(self.W2), np.zeros_like(self.W3)
-
-        # iterate over history of observations, hiddens states, net outputs, actions taken, rewards and next observations
-        for x, h1, h2, p, a, r, xn in zip(self.history['x'], self.history['h1'], self.history['h2'], self.history['p'], self.history['a'], rewards, self.history['xn']):
-            if self.learn_model:
-                # action gradient and next observation estimation error
-                dp = np.hstack(([r * (a - p[0])], self.get_normalized_state(xn) - p[1:])) * d_sigmoid(p)
-            else:
-                # model-free variant
-                dp = r * (a - p[0]) * d_sigmoid(p)
-            dW3 += np.dot(dp[:, np.newaxis], h2[:, np.newaxis].T)
-
-            dh2 = dp.dot(self.W3)
-            dh2 *= d_rect(h2, self.rect_leakiness)
-            dW2 += np.dot(dh2[:, np.newaxis], h1[:, np.newaxis].T)
-
-            dh1 = dh2.dot(self.W2)
-            dh1 *= d_rect(h1, self.rect_leakiness) # chain rule: set dh (outer) to 0 where h (inner) is <= 0
-            dW1 += np.dot(x[:, np.newaxis], dh1[:, np.newaxis].T).T
-
-        return dW1, dW2, dW3
 
     def get_action(self, observation, training=True):
         '''asks the net what action to do given an `observation` and does some
            book-keeping except when training is disabled'''
-        p, h1, h2 = self.net_forward(observation)
+        _, h1, h2, p = self.net.forward(observation)
         action = 0 if p[0] < np.random.random() else 1
         if training:
             self.history['x'].append(observation)
@@ -152,43 +171,29 @@ class Agent(object):
 
     def end_game(self):
         '''shuts down a game and triggers a learning step when needed'''
-        r = self.get_discounted_rewards()
-        if r is not None:
-            r -= np.mean(r)
-            std = np.std(r)
-            r /= std
-            # get gradients with backprop and pimped rewards
-            dW1, dW2, dW3 = self.net_backward(r)
-            # aggregate gradients for later use
-            self.dW1 += dW1
-            self.dW2 += dW2
-            self.dW3 += dW3
+        rewards = self.get_discounted_rewards()
+        if rewards is not None:
+            # compute errors
+            actions = np.array(self.history['a'])
+            ps = np.array(self.history['p']).T
+            next_observations = np.array(self.history['xn']).T
+            if self.learn_model:
+                # action gradient and next observation estimation error
+                errors = np.vstack(([rewards * (actions - ps[0])], self.get_normalized_state(next_observations) - ps[1:])).T
+            else:
+                # model-free variant
+                errors = rewards * (actions - ps)
+
+            states = zip(self.history['x'], self.history['h1'], self.history['h2'])
+            self.net.backpropagate_batch(states, errors)
+
         self.history.clear()
 
         if self.nb_games % self.batch_size == 0:
             # time to learn
-            self.update_weights()
-
-    def update_weights(self):
-        '''flushes the gradient buffers'''
-        # do fancy rmsprop-optimized gradient descent
-        self.rmspropW1 = self.rms_decay_rate * self.rmspropW1 + (1 - self.rms_decay_rate) * self.dW1**2
-        self.W1 += self.learning_rate * self.dW1 / (np.sqrt(self.rmspropW1) + 0.00001)
-        # clear gradient buffer
-        self.dW1 = np.zeros_like(self.dW1)
-
-        # and second layer
-        self.rmspropW2 = self.rms_decay_rate * self.rmspropW2 + (1 - self.rms_decay_rate) * self.dW2**2
-        self.W2 += self.learning_rate * self.dW2 / (np.sqrt(self.rmspropW2) + 0.00001)
-        self.dW2 = np.zeros_like(self.dW2)
-
-        # third
-        self.rmspropW3 = self.rms_decay_rate * self.rmspropW3 + (1 - self.rms_decay_rate) * self.dW3**2
-        self.W3 += self.learning_rate * self.dW3 / (np.sqrt(self.rmspropW3) + 0.00001)
-        self.dW3 = np.zeros_like(self.dW3)
-
-        if self.log:
-            self.log.log((self.W1, self.W2, self.W3))
+            self.net.update_weights()
+            if self.log:
+                self.log.log([l.W for l in self.net.layers])
 
     def train_games(self, environment, n):
         '''trains on `n` games in `environment`'''
