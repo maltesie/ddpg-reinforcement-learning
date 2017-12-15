@@ -12,7 +12,9 @@ def sigmoid(x):
 
 def d_sigmoid(x):
     '''its derivative'''
-    return np.exp(x) / ((np.exp(x) + 1.) ** 2.)
+    # twice as fast as doing: np.exp(x) / ((np.exp(x) + 1.) ** 2.)
+    s = sigmoid(x)
+    return s * (1 - s)
 
 def rect(x, leakiness=0.1):
     '''(leaky) rectifier (ReLU) activation function'''
