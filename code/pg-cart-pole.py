@@ -1,6 +1,6 @@
 import gym
 import numpy as np
-from collections import defaultdict
+from collections import defaultdict, deque
 import time, sys
 
 from wondevwoman import weight_logger, weight_plotter
@@ -30,16 +30,18 @@ def d_rect(x, leakiness=0.1):
 
 
 class Layer(object):
-    def __init__(self, shape, activation_function, activation_function_derivative, rms_decay_rate=0.99, learning_rate=0.000333):
-        assert(len(shape) == 2)
-        self.shape = shape
-        self.neurons = shape[0]
+    def __init__(self, nb_neurons, activation_function, activation_function_derivative, rms_decay_rate=0.99, learning_rate=0.000333):
+        self.nb_neurons = nb_neurons
+        self.shape = [nb_neurons, 0]
         self.activation_function = activation_function
         self.activation_function_derivative = activation_function_derivative
         self.rms_decay_rate = rms_decay_rate
         self.learning_rate = learning_rate
-        # layer weights
-        self.W = np.random.randn(*shape) / np.sqrt(shape[1])
+
+    def init_weights(self):
+        '''creates the arrays neccessary for layer weight management'''
+        # `shape` depends on the number of neurons and the number of values received from previous layers
+        self.W = np.random.randn(*self.shape) / np.sqrt(self.shape[1])
         # gradient buffer (to be aggregated until update_weights())
         self.dW = np.zeros_like(self.W)
         # rms gradient descent optimizer
@@ -56,35 +58,127 @@ class Layer(object):
 
 class NeuralNet(object):
     def __init__(self, input_dimensions):
-        self.input_dimensions = input_dimensions
+        '''input_dimensions: list of input dimensions'''
+        try:
+            iter(input_dimensions)
+            # multiple inputs
+            self.input_dimensions = input_dimensions
+            self.nb_inputs = len(input_dimensions)
+        except TypeError:
+            # only one input
+            self.input_dimensions = (input_dimensions,)
+            self.nb_inputs = 1
+        self.output_layers = []
+        self.prevs = defaultdict(list)
+        self.nexts = defaultdict(list)
         self.layers = []
 
-    def add_layer(self, neurons, activation_function, activation_function_derivative):
-        prev_layer_neurons = self.input_dimensions if len(self.layers) == 0 else self.layers[-1].neurons
-        layer = Layer((neurons, prev_layer_neurons), activation_function, activation_function_derivative)
+    def add_layer(self, nb_neurons, activation_function, activation_function_derivative):
+        layer = Layer(nb_neurons, activation_function, activation_function_derivative)
         self.layers.append(layer)
+        return layer
 
-    def forward(self, x):
-        '''forward pass through the net with input x. returns all layer states from input -> output.'''
-        states = [x]
+    def connect(self, layer1, layer2):
+        '''layers can be hidden/output Layer objects or an input index'''
+        self.nexts[layer1].append(layer2)
+        self.prevs[layer2].append(layer1)
+        # update shape of layer weights
+        layer2.shape[1] += layer1.nb_neurons if isinstance(layer1, Layer) else self.input_dimensions[layer1]
+        # update output layer list
+        if layer1 in self.output_layers:
+            self.output_layers.remove(layer1)
+        if layer2 not in self.output_layers and len(self.nexts[layer2]) == 0:
+            self.output_layers.append(layer2)
+
+    def init_weights(self):
+        '''create weight arrays in each layer'''
         for layer in self.layers:
-            state = layer.activation_function(layer.W.dot(states[-1]))
-            states.append(state)
+            layer.init_weights()
+
+    def get_prevs_state(self, states, layer):
+        '''gathers the states of all previous layers in one vector'''
+        prev_states = []
+        # allow up to one prev layer with two next layers
+        multi_nexts_layer = None
+        for prev in self.prevs[layer]:
+            assert(len(self.nexts[prev]) > 0)
+            if len(self.nexts[prev]) > 1:
+                assert(multi_nexts_layer is None)
+                multi_nexts_layer = prev
+                assert(False) # TODO: does not work yet (second half not handled yet)
+            else:
+                prev_states.append(states[prev])
+        # the layer with multiple next layers (if available) has to be the last one
+        if multi_nexts_layer is not None:
+            prev_states.append(multi_nexts_layer)
+
+        # concatenate state and cut off the excess (if having a layer with multiple next states)
+        s = np.concatenate(prev_states)[:layer.shape[1]]
+
+        return s
+
+    def forward(self, inputs):
+        '''forward pass through the net with `inputs`. returns all layer states from inputs -> outputs as dict.'''
+        states = {}
+        # set input states
+        if self.nb_inputs == 1:
+            states[0] = inputs
+        else:
+            for idx, x in enumerate(inputs):
+                states[idx] = x
+        # add all next-to-input layers to the queue
+        q = deque([layer for input_idx in range(self.nb_inputs) for layer in self.nexts[input_idx]])
+        while len(q) > 0:
+            layer = q.popleft()
+            if any((prev not in states) for prev in self.prevs[layer]):
+                # previous states not yet computed: postpone
+                q.append(layer)
+            else:
+                # gather states of all previous layers
+                s = self.get_prevs_state(states, layer)
+
+                # actual layer step
+                states[layer] = layer.activation_function(layer.W.dot(s))
+
+                for next_layer in self.nexts[layer]:
+                    q.append(next_layer)
+
         return states
 
-    def backpropagate(self, states, error):
-        '''backpropagation. stores weight deltas in the layers' gradient buffer respectively.'''
-        for state, layer in reversed(list(zip(states, self.layers))):
-            dW = np.outer(error, state)
+    def backpropagate(self, states, errors):
+        '''backpropagation. gets dict of layer states and list of output layer error vectors.
+           stores weight deltas in the layers' gradient buffer respectively.'''
+        # turn errors into a dict layer -> error
+        errors = {lay: err for lay, err in zip(self.output_layers, errors)}
+        q = deque(self.output_layers)
+        while len(q) > 0:
+            layer = q.popleft()
+            # compute weight deltas as product of error and previous layers' state
+            s = self.get_prevs_state(states, layer)
+            dW = np.outer(errors[layer], s)
             layer.dW += dW
-            error = error.dot(layer.W) * layer.activation_function_derivative(state)
+            # compute previous layers' error as product of current error, weights and derivative of state
+            prev_error = errors[layer].dot(layer.W) * layer.activation_function_derivative(s)
+            # split error vector into previous layers
+            i = 0
+            for prev_layer in self.prevs[layer]:
+                assert(prev_layer not in errors)
+                nb_neurons = prev_layer.nb_neurons if isinstance(prev_layer, Layer) else self.input_dimensions[prev_layer]
+                errors[prev_layer] = prev_error[i : i + nb_neurons]
+                i += nb_neurons
+                # add previous layer to queue (except input layers)
+                if isinstance(prev_layer, Layer):
+                    q.append(prev_layer)
 
     def backpropagate_batch(self, states_batch, error_batch):
+        '''calls backpropagation for each state-error pair in the lists'''
         for states, error in zip(states_batch, error_batch):
             self.backpropagate(states, error)
 
     def update_weights(self):
-        [l.update_weights() for l in self.layers]
+        '''flushes the gradient buffers of all layers'''
+        for layer in self.layers:
+            layer.update_weights()
 
 
 class Agent(object):
@@ -113,9 +207,13 @@ class Agent(object):
             o = 1 # only action
 
         self.net = NeuralNet(i)
-        self.net.add_layer(hidden_neurons1, lambda x: rect(x, rect_leakiness), lambda x: d_rect(x, rect_leakiness))
-        self.net.add_layer(hidden_neurons2, lambda x: rect(x, rect_leakiness), lambda x: d_rect(x, rect_leakiness))
-        self.net.add_layer(o, sigmoid, d_sigmoid)
+        h1 = self.net.add_layer(hidden_neurons1, lambda x: rect(x, rect_leakiness), lambda x: d_rect(x, rect_leakiness))
+        h2 = self.net.add_layer(hidden_neurons2, lambda x: rect(x, rect_leakiness), lambda x: d_rect(x, rect_leakiness))
+        self.p_layer = self.net.add_layer(o, sigmoid, d_sigmoid)
+        self.net.connect(0, h1)
+        self.net.connect(h1, h2)
+        self.net.connect(h2, self.p_layer)
+        self.net.init_weights()
 
         # value storage to be filled during a match
         self.history = defaultdict(list)
@@ -156,13 +254,11 @@ class Agent(object):
     def get_action(self, observation, training=True):
         '''asks the net what action to do given an `observation` and does some
            book-keeping except when training is disabled'''
-        _, h1, h2, p = self.net.forward(observation)
+        states = self.net.forward(observation)
+        p = states[self.p_layer]
         action = 0 if p[0] < np.random.random() else 1
         if training:
-            self.history['x'].append(observation)
-            self.history['h1'].append(h1)
-            self.history['h2'].append(h2)
-            self.history['p'].append(p)
+            self.history['states'].append(states)
             self.history['a'].append(action)
         return action
 
@@ -177,17 +273,18 @@ class Agent(object):
         if rewards is not None:
             # compute errors
             actions = np.array(self.history['a'])
-            ps = np.array(self.history['p']).T
-            next_observations = np.array(self.history['xn']).T
+            ps = np.array([states[self.p_layer] for states in self.history['states']]).T
             if self.learn_model:
                 # action gradient and next observation estimation error
-                errors = np.vstack(([rewards * (actions - ps[0])], self.get_normalized_state(next_observations) - ps[1:])).T
+                next_observations = np.array(self.history['xn']).T
+                errors = np.concatenate(([rewards * (actions - ps[0])], self.get_normalized_state(next_observations) - ps[1:])).T
             else:
                 # model-free variant
-                errors = rewards * (actions - ps)
+                errors = (rewards * (actions - ps)).T   # transposes needed to make subtraction work. ps are [[a], [b], [c], ...]
 
-            states = zip(self.history['x'], self.history['h1'], self.history['h2'])
-            self.net.backpropagate_batch(states, errors)
+            errors = errors[:, np.newaxis, :]           # one error vector per output layer
+
+            self.net.backpropagate_batch(self.history['states'], errors)
 
         self.history.clear()
 
