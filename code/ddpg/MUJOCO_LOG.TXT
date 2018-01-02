@@ -1,0 +1,6 @@
+Wed Dec 20 21:20:22 2017
+ERROR: Invalid activation key
+
+Wed Dec 20 21:21:05 2017
+ERROR: Invalid activation key
+
