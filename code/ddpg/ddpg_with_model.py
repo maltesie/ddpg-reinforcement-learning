@@ -22,23 +22,26 @@ from actor import ActorNetwork
 from critic import CriticNetwork
 from gym.wrappers.monitoring import Monitor
 
+from gp_cartpole import GP
+#from nn import NN
+from actionsampler import ActionSampler
 
 # ==========================
 #   Training Parameters
 # ==========================
 # Maximum episodes run
-MAX_EPISODES = 900
+MAX_EPISODES = 1000
 # Max episode length
-MAX_EP_STEPS = 1000
+MAX_EP_STEPS = 200
 # Episodes with noise
-NOISE_MAX_EP = 800
+NOISE_MAX_EP = 1000
 # Noise parameters - Ornstein Uhlenbeck
 DELTA = 0.5 # The rate of change (time)
 SIGMA = 0.5 # Volatility of the stochastic processes
 OU_A = 3. # The rate of mean reversion
 OU_MU = 0. # The long run average interest rate
 # Reward parameters
-REWARD_FACTOR = 0.001 # Total episode reward factor
+REWARD_FACTOR = 0.01 # Total episode reward factor
 # Base learning rate for the Actor network
 ACTOR_LEARNING_RATE = 0.0001
 # Base learning rate for the Critic Network
@@ -54,11 +57,11 @@ TAU = 0.001
 # Render gym env during training
 RENDER_ENV = False
 # Use Gym Monitor
-GYM_MONITOR_EN = True
+GYM_MONITOR_EN = False
 # Gym environment
-#ENV_NAME = 'CartPole-v0' # Discrete: Reward factor = 0.1
+ENV_NAME = 'CartPole-v0' # Discrete: Reward factor = 0.1
 #ENV_NAME = 'CartPole-v1' # Discrete: Reward factor = 0.1
-ENV_NAME = 'Pendulum-v0' # Continuous: Reward factor = 0.01
+#ENV_NAME = 'Pendulum-v0' # Continuous: Reward factor = 0.01
 # Directory for storing gym results
 MONITOR_DIR = './results/' + ENV_NAME
 # Directory for storing tensorboard summary results
@@ -75,9 +78,10 @@ def build_summaries():
     episode_reward = tf.Variable(0.)
     tf.summary.scalar("Reward", episode_reward)
     episode_ave_max_q = tf.Variable(0.)
-    tf.summary.scalar("Qmax Value", episode_ave_max_q)
-
-    summary_vars = [episode_reward, episode_ave_max_q]
+    tf.summary.scalar("Qmax", episode_ave_max_q)
+    eval_episodes = tf.Variable(0.)
+    tf.summary.scalar("Evaluation", eval_episodes)
+    summary_vars = [episode_reward, episode_ave_max_q, eval_episodes]
     summary_ops = tf.summary.merge_all()
 
     return summary_ops, summary_vars
@@ -85,7 +89,7 @@ def build_summaries():
 # ===========================
 #   Agent Training
 # ===========================
-def train(sess, env, actor, critic, noise, reward, discrete):
+def train(sess, env, model, actor, critic, noise, reward, discrete):
     # Set up summary writer
     summary_writer = tf.summary.FileWriter(SUMMARY_DIR)
 
@@ -102,14 +106,33 @@ def train(sess, env, actor, critic, noise, reward, discrete):
     ou_level = 0.
 
     for i in range(MAX_EPISODES):
-        s = env.reset()
-
+        
         ep_reward = 0
         ep_ave_max_q = 0
 
         # Clear episode buffer
         episode_buffer = np.empty((0,5), float)
-
+        
+        if i % 10 == 0:
+            observations = []
+            actions = []
+            observation = env.reset()
+            reward_eval = 0
+            for t in range(MAX_EP_STEPS):      
+                env.render()   
+                observations.append(observation)
+                a = actor.predict(np.reshape(observation, (1, actor.s_dim)))
+                if discrete:
+                    action = np.argmax(a)
+                else:
+                    action = a[0]
+                actions.append(action)
+                observation, r, done, info = env.step(action)
+                reward_eval += r
+                if done: break
+            print( 'EVALUATION| Steps: ',t)
+        
+        s = env.reset()    
         for j in range(MAX_EP_STEPS):
             if RENDER_ENV:
                 env.render()
@@ -127,7 +150,8 @@ def train(sess, env, actor, critic, noise, reward, discrete):
             else:
                 action = a[0]
 
-            s2, r, terminal, info = env.step(action)
+            #s2, r, terminal, info = env.step(action)
+            s2, r, terminal = model.predict(s, action)
 
             # Choose reward type
             ep_reward += r
@@ -167,7 +191,7 @@ def train(sess, env, actor, critic, noise, reward, discrete):
             # Set previous state for next step
             s = s2
 
-            if terminal:
+            if (terminal or j==MAX_EP_STEPS-1):
                 # Reward system for episode
                 #episode_buffer = reward.total(episode_buffer, ep_reward)
                 episode_buffer = reward.discount(episode_buffer)
@@ -180,6 +204,7 @@ def train(sess, env, actor, critic, noise, reward, discrete):
                 summary = tf.Summary()
                 summary.value.add(tag='Reward', simple_value=float(ep_reward))
                 summary.value.add(tag='Qmax', simple_value=float(ep_ave_max_q / float(j)))
+                summary.value.add(tag='Evaluation', simple_value=float(reward_eval))
                 summary_writer.add_summary(summary, i)
 
                 summary_writer.flush()
@@ -209,7 +234,7 @@ def main(_):
             assert (env.action_space.high == -env.action_space.low)
             discrete = False
             print('Continuous Action Space')
-        except IndexError:
+        except (ValueError, IndexError):
             action_dim = env.action_space.n
             action_bound = 1
             discrete = True
@@ -217,21 +242,34 @@ def main(_):
 
         actor = ActorNetwork(sess, state_dim, action_dim, action_bound,
                              ACTOR_LEARNING_RATE, TAU)
-
+        
         critic = CriticNetwork(sess, state_dim, action_dim,
                                CRITIC_LEARNING_RATE, TAU, actor.get_num_trainable_vars())
 
         noise = Noise(DELTA, SIGMA, OU_A, OU_MU)
         reward = Reward(REWARD_FACTOR, GAMMA)
 
+        model = GP(state_dim)
+        sampler = ActionSampler(True, actions=[0,1])
+        model_train_ep = 5
+        model_train_steps = 30
+        for i in range(model_train_ep):
+            observations = [env.reset()]
+            actions = sampler.sample(model_train_steps)
+            for t in range(model_train_steps): 
+                observation,_,ddd,_ = env.step(actions[t])
+                observations.append(observation)
+            model.add_trajectory(observations[:-1], actions.reshape(-1,1))
+        model.train(skip_samples=False)
+
         if GYM_MONITOR_EN:
             if not RENDER_ENV:
                 env = Monitor(env, MONITOR_DIR, video_callable=False, force=True)
             else:
-                env = Monitor(env, MONITOR_DIR, force=True)
-
+                env = Monitor(env, MONITOR_DIR, force=True)   
+                
         try:
-            train(sess, env, actor, critic, noise, reward, discrete)
+            train(sess, env, model, actor, critic, noise, reward, discrete)
         except KeyboardInterrupt:
             pass
 

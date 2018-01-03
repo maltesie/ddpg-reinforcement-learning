@@ -28,7 +28,7 @@ class GP(object):
 
 	def predict(self, observation, action):
 		y_pred = self.model.predict(np.asarray([*observation, action]).reshape(1,-1), return_std=False)
-		return y_pred.flatten(), 1.0, (0.25<np.abs(y_pred[0,1]) or 1.0<np.abs(y_pred[0,0]))
+		return y_pred.flatten(), 1.0, (0.21<np.abs(y_pred[0,2]) or 2.4<np.abs(y_pred[0,0]))
 
 	def rollout(self, observation, policy, n):
 		trajectory_pred = np.empty(n, self.output_dim)
