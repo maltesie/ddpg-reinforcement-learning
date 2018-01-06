@@ -50,6 +50,7 @@ class Layer(object):
     def update_weights(self):
         '''flushes the gradient buffer'''
         # do fancy rmsprop-optimized gradient descent
+        print(self.learning_rate)
         self.rmsprop = self.rms_decay_rate * self.rmsprop + (1 - self.rms_decay_rate) * self.dW**2
         self.W += self.learning_rate * self.dW / (np.sqrt(self.rmsprop) + 0.00001)
         # clear gradient buffer
@@ -73,17 +74,23 @@ class NeuralNet(object):
         self.nexts = defaultdict(list)
         self.layers = []
 
-    def add_layer(self, nb_neurons, activation_function, activation_function_derivative):
-        layer = Layer(nb_neurons, activation_function, activation_function_derivative)
+    def create_layer(self, nb_neurons, activation_function, activation_function_derivative, **kwargs):
+        '''adds a new layer to the net (without connecting it to any others)'''
+        layer = Layer(nb_neurons, activation_function, activation_function_derivative, **kwargs)
         self.layers.append(layer)
         return layer
 
-    def connect(self, layer1, layer2):
-        '''layers can be hidden/output Layer objects or an input index'''
+    def share_layer(self, layer):
+        '''adds an existing layer object to the net'''
+        self.layers.append(layer)
+
+    def connect(self, layer1, layer2, shared=False):
+        '''layers can be hidden/output Layer objects or an input index. a shared connection is one which does not change the weight shape.'''
         self.nexts[layer1].append(layer2)
         self.prevs[layer2].append(layer1)
-        # update shape of layer weights
-        layer2.shape[1] += layer1.nb_neurons if isinstance(layer1, Layer) else self.input_dimensions[layer1]
+        if not shared:
+            # update shape of layer weights
+            layer2.shape[1] += layer1.nb_neurons if isinstance(layer1, Layer) else self.input_dimensions[layer1]
         # update output layer list
         if layer1 in self.output_layers:
             self.output_layers.remove(layer1)
@@ -188,6 +195,7 @@ class Agent(object):
             rms_decay_rate = 0.99,
             hidden_neurons1 = 100,
             hidden_neurons2 = 100,
+            hidden_neurons3 = 100,
             learn_model = True,
             rect_leakiness=0.1,
             log_filename = 'pg-cart-pole.log'):
@@ -200,20 +208,48 @@ class Agent(object):
 
         # dim of observation vector (input)
         i = 4
-        # dim of action probability vector (output)
-        if learn_model:
-            o = 1 + i # 1 action + model
-        else:
-            o = 1 # only action
+        # # dim of action probability vector (output)
+        # if learn_model:
+        #     o = 1 + i # 1 action + model
+        # else:
+        #     o = 1 # only action
 
-        self.net = NeuralNet(i)
-        h1 = self.net.add_layer(hidden_neurons1, lambda x: rect(x, rect_leakiness), lambda x: d_rect(x, rect_leakiness))
-        h2 = self.net.add_layer(hidden_neurons2, lambda x: rect(x, rect_leakiness), lambda x: d_rect(x, rect_leakiness))
-        self.p_layer = self.net.add_layer(o, sigmoid, d_sigmoid)
-        self.net.connect(0, h1)
-        self.net.connect(h1, h2)
-        self.net.connect(h2, self.p_layer)
-        self.net.init_weights()
+        lrect = lambda x: rect(x, rect_leakiness)
+        d_lrect = lambda x: d_rect(x, rect_leakiness)
+
+        self.net_action = NeuralNet(i)      # input: observation (vector of length i)
+        self.net_model = NeuralNet((i, 1))  # input: observation + action
+        l_observation = self.net_action.create_layer(hidden_neurons1, lrect, d_lrect)
+        #self.net_model.share_layer(l_observation)
+        #l_observation2 = self.net_model.create_layer(8, lrect, d_lrect, learning_rate=0.005)
+        l_to_action = self.net_action.create_layer(hidden_neurons2, lrect, d_lrect)
+        #l_to_observation_prediction = self.net_model.create_layer(8, lrect, d_lrect, learning_rate=0.005)
+        self.l_p_action = self.net_action.create_layer(1, sigmoid, d_sigmoid)
+        self.l_observation_prediction = self.net_model.create_layer(i, lambda x: x, lambda x: 1, learning_rate=0.1)
+        #self.l_observation_prediction = self.net_model.create_layer(i, sigmoid, d_sigmoid, learning_rate=0.005)
+
+        self.net_action.connect(0, l_observation)
+        self.net_action.connect(l_observation, l_to_action)
+        self.net_action.connect(l_to_action, self.l_p_action)
+
+        #self.net_model.connect(0, l_observation, shared=True)
+        #self.net_model.connect(l_observation, l_to_observation_prediction)
+        # self.net_model.connect(0, l_observation2)
+        # self.net_model.connect(l_observation2, l_to_observation_prediction)
+        # self.net_model.connect(1, l_to_observation_prediction)
+        # self.net_model.connect(l_to_observation_prediction, self.l_observation_prediction)
+        self.net_model.connect(0, self.l_observation_prediction)
+
+        self.net_action.init_weights()
+        self.net_model.init_weights()
+
+        #h1 = self.net.create_layer(hidden_neurons1, lambda x: rect(x, rect_leakiness), lambda x: d_rect(x, rect_leakiness))
+        #h2 = self.net.create_layer(hidden_neurons2, lambda x: rect(x, rect_leakiness), lambda x: d_rect(x, rect_leakiness))
+        #self.p_layer = self.net.create_layer(o, sigmoid, d_sigmoid)
+        #self.net.connect(0, h1)
+        #self.net.connect(h1, h2)
+        #self.net.connect(h2, self.p_layer)
+        #self.net.init_weights()
 
         # value storage to be filled during a match
         self.history = defaultdict(list)
@@ -254,12 +290,16 @@ class Agent(object):
     def get_action(self, observation, training=True):
         '''asks the net what action to do given an `observation` and does some
            book-keeping except when training is disabled'''
-        states = self.net.forward(observation)
-        p = states[self.p_layer]
+        states = self.net_action.forward(observation)
+        p = states[self.l_p_action]
         action = 0 if p[0] < np.random.random() else 1
         if training:
-            self.history['states'].append(states)
+            self.history['states_action'].append(states)
             self.history['a'].append(action)
+            # also predict the next observation
+            states = self.net_model.forward((observation, np.asarray([action])))
+            self.history['states_model'].append(states)
+
         return action
 
     def add_feedback(self, reward, next_observation):
@@ -271,28 +311,33 @@ class Agent(object):
         '''shuts down a game and triggers a learning step when needed'''
         rewards = self.get_discounted_rewards()
         if rewards is not None:
-            # compute errors
+            # compute action error which enforces the action which was taken to be taken
             actions = np.array(self.history['a'])
-            ps = np.array([states[self.p_layer] for states in self.history['states']]).T
-            if self.learn_model:
-                # action gradient and next observation estimation error
-                next_observations = np.array(self.history['xn']).T
-                errors = np.concatenate(([rewards * (actions - ps[0])], self.get_normalized_state(next_observations) - ps[1:])).T
-            else:
-                # model-free variant
-                errors = (rewards * (actions - ps)).T   # transposes needed to make subtraction work. ps are [[a], [b], [c], ...]
-
+            action_ps = np.array([states[self.l_p_action] for states in self.history['states_action']]).T
+            errors = (rewards * (actions - action_ps)).T
             errors = errors[:, np.newaxis, :]           # one error vector per output layer
+            # train policy
+            self.net_action.backpropagate_batch(self.history['states_action'], errors)
 
-            self.net.backpropagate_batch(self.history['states'], errors)
+        # compute observation estimation error
+        observations = np.array([states[0] for states in self.history['states_model']])
+        observation_predictions = np.array([states[self.l_observation_prediction] for states in self.history['states_model']])
+        errors = (observations - observation_predictions)
+        avg_error = errors #self.get_normalized_state(errors.T)
+        avg_error = np.mean(avg_error)
+        print(abs(avg_error), observations[0], observation_predictions[0], errors[0])
+        errors = errors[:, np.newaxis, :]
+        # train model
+        self.net_model.backpropagate_batch(self.history['states_model'], errors)
 
         self.history.clear()
 
         if self.nb_games % self.batch_size == 0:
             # time to learn
-            self.net.update_weights()
+            self.net_action.update_weights()
+            self.net_model.update_weights() # TODO didnt update the WHOLE time
             if self.log:
-                self.log.log([l.W for l in self.net.layers])
+                self.log.log([l.W for l in self.net_model.layers])
 
     def train_games(self, environment, n):
         '''trains on `n` games in `environment`'''
@@ -344,7 +389,7 @@ else:
 env = gym.make('CartPole-v1')
 
 # hyperparameters
-param = {'learn_model': True, 'rect_leakiness': 0.1}
+param = {'learn_model': False, 'rect_leakiness': 0.1, 'log_filename': 'model.log'}
 
 
 if mode == 'demo':
