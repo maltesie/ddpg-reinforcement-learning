@@ -2,8 +2,6 @@
 
 import tensorflow as tf
 import numpy as np
-import gym
-import time
 from collections import defaultdict
 
 class Agent(object):
@@ -155,49 +153,3 @@ class Agent(object):
                 nb_steps += 1
             nb_stepss.append(nb_steps)
         return sum(nb_stepss) / float(n)
-
-if __name__ == '__main__':
-
-    env = gym.make('CartPole-v1')
-
-    agent = Agent()
-    agent.train_games(env, 500)
-    agent.evaluate_games(env, 10)
-    exit(0)
-
-    running_mean = 22. # init with rougly the average step count of a random agent
-
-    for i in range(10000): # terminate eventually
-        # episode log
-        steps = 0
-        actions = []
-        rewards = []
-        xs = []
-        nxs = []
-
-        # let's go
-        x = env.reset()
-        done = False
-        while not done:
-            #env.render()
-            #time.sleep(0.075)
-
-            xs.append(x)
-            y = net_aps.eval(feed_dict={net_xs: [x]})[0][0] # get action
-            action = 0 if np.random.random() > y else 1
-            actions.append(action)
-
-            x, reward, done, info = env.step(action)
-            rewards.append(-1. if done else 1.)
-            nxs.append(x)
-            steps += 1
-
-        running_mean = .99 * running_mean + .01 * steps
-        print('\rcurrent step count estimate: %.2f' % running_mean, end='', flush=True)
-
-        # train policy
-        discounted_rewards = get_discounted_rewards(rewards)
-        net_session.run(train_policy, feed_dict={net_xs: xs, net_rewards: discounted_rewards, net_actions: actions})
-
-        # train model
-        net_session.run(train_model, feed_dict={net_xs: xs, net_nxs: nxs, net_actions: actions})
