@@ -22,17 +22,32 @@ from actor import ActorNetwork
 from critic import CriticNetwork
 from gym.wrappers.monitoring import Monitor
 
-from gp_cartpole import GP
-#from nn import NN
+from gp import GP
+from nn import NN
 from actionsampler import ActionSampler
+from functions import done_pendulum, reward_pendulum, done_cartpole, reward_cartpole
 
 # ==========================
 #   Training Parameters
 # ==========================
+
+# Toggle model use
+use_model = True
+#Model architecture: GP or NN
+M = GP
+# Model pretraining episodes
+model_train_ep = 5
+# Model pretraining steps per episode
+model_train_steps = 20
+# Number of samples the model uses
+nb_samples = 800
+# Interval of evaluation and retraining
+nb_ep_eval = 20
+
 # Maximum episodes run
 MAX_EPISODES = 1000
 # Max episode length
-MAX_EP_STEPS = 200
+MAX_EP_STEPS = 400
 # Episodes with noise
 NOISE_MAX_EP = 1000
 # Noise parameters - Ornstein Uhlenbeck
@@ -113,7 +128,7 @@ def train(sess, env, model, actor, critic, noise, reward, discrete):
         # Clear episode buffer
         episode_buffer = np.empty((0,5), float)
         
-        if i % 10 == 0:
+        if i % nb_ep_eval == 0:
             observations = []
             actions = []
             observation = env.reset()
@@ -129,8 +144,11 @@ def train(sess, env, model, actor, critic, noise, reward, discrete):
                 actions.append(action)
                 observation, r, done, info = env.step(action)
                 reward_eval += r
-                if done: break
-            print( 'EVALUATION| Steps: ',t)
+                if done:
+                    model.add_trajectory(np.asarray(observations), np.asarray(actions).reshape(-1,1))
+                    model.train(nb_samples=nb_samples)
+                    break
+            print( '| EVALUATION | Reward: ', reward_eval)
         
         s = env.reset()    
         for j in range(MAX_EP_STEPS):
@@ -149,9 +167,11 @@ def train(sess, env, model, actor, critic, noise, reward, discrete):
                 action = np.argmax(a)
             else:
                 action = a[0]
-
-            #s2, r, terminal, info = env.step(action)
-            s2, r, terminal = model.predict(s, action)
+                
+            if not use_model:
+                s2, r, terminal, info = env.step(action)
+            else:
+                s2, r, terminal = model.predict(s, action)
 
             # Choose reward type
             ep_reward += r
@@ -248,19 +268,23 @@ def main(_):
 
         noise = Noise(DELTA, SIGMA, OU_A, OU_MU)
         reward = Reward(REWARD_FACTOR, GAMMA)
-
-        model = GP(state_dim)
-        sampler = ActionSampler(True, actions=[0,1])
-        model_train_ep = 5
-        model_train_steps = 30
+        
+        if ENV_NAME == 'Pendulum-v0':
+            model = M(state_dim, done_pendulum, reward_pendulum)
+            sampler = ActionSampler(False, action_bounds=[-2.0,2.0])
+        elif ENV_NAME == 'CartPole-v0':
+            model = M(state_dim, done_cartpole, reward_cartpole)
+            sampler = ActionSampler(True, actions=[0,1])
+        
         for i in range(model_train_ep):
             observations = [env.reset()]
             actions = sampler.sample(model_train_steps)
+            #print(actions)
             for t in range(model_train_steps): 
                 observation,_,ddd,_ = env.step(actions[t])
                 observations.append(observation)
             model.add_trajectory(observations[:-1], actions.reshape(-1,1))
-        model.train(skip_samples=False)
+        model.train(nb_samples=nb_samples)
 
         if GYM_MONITOR_EN:
             if not RENDER_ENV:

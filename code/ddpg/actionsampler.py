@@ -19,4 +19,4 @@ class ActionSampler(object):
         else:
             samples=(np.random.rand(n)-0.5)*2.0
             samples *= self.action_bounds[0]
-            return samples
+            return samples.reshape(-1,1)
