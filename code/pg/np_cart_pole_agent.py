@@ -96,7 +96,7 @@ class Agent(object):
             hidden_neurons2 = 100,
             learn_model = True,
             rect_leakiness=0.1,
-            log_filename = 'pg-cart-pole.log'):
+            log_filename = None):
 
         self.batch_size = batch_size
         self.learning_rate = learning_rate

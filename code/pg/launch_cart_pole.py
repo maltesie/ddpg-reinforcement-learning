@@ -2,7 +2,8 @@ import gym
 import numpy as np
 import time, sys
 
-from np_cart_pole_agent import Agent
+#from np_cart_pole_agent import Agent
+from tf_cart_pole_agent import Agent
 
 
 if len(sys.argv) > 1:
@@ -57,7 +58,7 @@ elif mode == 'evaluate':
     scoress = [[] for _ in range(nb_trainings)]
     for t in range(nb_trainings):
         print('\rtrainging instance %i/%i' % (t + 1, nb_trainings))
-        agent = Agent(**param, log_filename=False)
+        agent = Agent(**param)
         while agent.nb_games < nb_games:
             print('\rgame %i/%i' % (agent.nb_games, nb_games), end='', flush=True)
             agent.train_games(env, batch_size)
