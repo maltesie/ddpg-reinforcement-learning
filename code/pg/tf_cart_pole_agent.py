@@ -51,12 +51,12 @@ class Agent(object):
         self.net_nxes = tf.matmul(tf.concat([self.net_world_features, tf.expand_dims(self.net_actions, axis=1)], axis=1), self.net_W3)
 
         # loss functions of the outputs above
-        loss_actions = -tf.reduce_mean(self.net_rewards * tf.log(tf.multiply(1 - self.net_actions, 1 - self.net_aps[:, 0]) + tf.multiply(self.net_actions, self.net_aps[:, 0])))
-        loss_nxs = tf.reduce_mean((self.net_nxs - self.net_nxes) ** 2)
+        self.loss_actions = -tf.reduce_mean(self.net_rewards * tf.log(tf.multiply(1 - self.net_actions, 1 - self.net_aps[:, 0]) + tf.multiply(self.net_actions, self.net_aps[:, 0])))
+        self.loss_nxs = tf.reduce_mean(tf.squared_difference(self.net_nxs, self.net_nxes))
 
         # training methods
-        self.train_policy = tf.train.RMSPropOptimizer(learning_rate=.01, decay=.99).minimize(loss_actions)
-        self.train_model = tf.train.RMSPropOptimizer(learning_rate=.01, decay=.99).minimize(loss_nxs)
+        self.train_policy = tf.train.RMSPropOptimizer(learning_rate=.01, decay=.99).minimize(self.loss_actions)
+        self.train_model = tf.train.RMSPropOptimizer(learning_rate=.01, decay=.99).minimize(self.loss_nxs)
 
         self.net_session = tf.InteractiveSession()
         tf.global_variables_initializer().run()
@@ -66,6 +66,31 @@ class Agent(object):
 
         # number of played/trained games
         self.nb_games = 0
+
+    def evaluate_model(self):
+        '''plots the observation history, the prediction of next observations and a chain prediction only depending on the first observation'''
+        import matplotlib.pyplot as plt
+
+        # real xs
+        xs = np.asarray(self.history['xs'])
+        # bulk prediction
+        nxes_bulk = np.asarray(self.net_nxes.eval(feed_dict={self.net_xs: self.history['xs'], self.net_actions: self.history['actions']}))
+        # chain prediction
+        nxes_chain = []
+        x = self.history['xs'][0]
+        for action in self.history['actions']:
+            x = self.net_nxes.eval(feed_dict={self.net_xs: [x], self.net_actions: [action]})[0]
+            nxes_chain.append(x)
+        nxes_chain = np.asarray(nxes_chain)
+
+        # plot!
+        plt.plot(range(len(xs)), xs[:, 0], color='black', label='ground truth')
+        # create axis for predictions starting at 1, not 0
+        X = range(1, nxes_bulk.shape[0] + 1)
+        plt.plot(X, nxes_bulk[:, 0], color='#0055AA', label='bulk prediction')
+        plt.plot(X, nxes_chain[:, 0], color='#CC0022', label='chain prediction')
+        plt.legend()
+        plt.show()
 
     def get_action(self, observation, training=True):
         '''when `training`, samples action based on an `observation` and does book-keeping. returns best action when not.'''
@@ -119,6 +144,9 @@ class Agent(object):
 
             # store number of achieved steps
             nb_stepss.append(nb_steps)
+
+            # if self.nb_games % 100 == 0:
+            #     self.evaluate_model()
 
             # train policy
             discounted_rewards = self.get_discounted_rewards()
