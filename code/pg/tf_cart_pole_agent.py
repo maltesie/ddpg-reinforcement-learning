@@ -53,6 +53,7 @@ class Agent(object):
         # loss functions of the outputs above
         self.loss_actions = -tf.reduce_mean(self.net_rewards * tf.log(tf.multiply(1 - self.net_actions, 1 - self.net_aps[:, 0]) + tf.multiply(self.net_actions, self.net_aps[:, 0])))
         self.loss_nxs = tf.reduce_mean(tf.squared_difference(self.net_nxs, self.net_nxes))
+        self.loss_nx_chain = tf.reduce_mean(tf.squared_difference(self.net_nxs, self.net_nxes))
 
         # training methods
         self.train_policy = tf.train.RMSPropOptimizer(learning_rate=.01, decay=.99).minimize(self.loss_actions)
@@ -63,6 +64,9 @@ class Agent(object):
 
         # value storage to be filled during a match
         self.history = defaultdict(list)
+
+        # experience storage remembered forever for learning (key -> list of lists of vectors)
+        self.experience = defaultdict(list)
 
         # number of played/trained games
         self.nb_games = 0
@@ -91,6 +95,18 @@ class Agent(object):
         plt.plot(X, nxes_chain[:, 0], color='#CC0022', label='chain prediction')
         plt.legend()
         plt.show()
+
+    def sample_experience(self, n):
+        '''returns `n` random experience data points'''
+        result = []
+        for _ in range(n):
+            i = np.random.randint(len(self.experience['xs']))
+            t = np.random.randint(len(self.experience['xs'][i]) - 1)
+            x = self.experience['xs'][i][t]
+            action = self.experience['actions'][i][t]
+            nx = self.experience['xs'][i][t + 1]
+            result.append([x, action, nx])
+        return result
 
     def get_action(self, observation, training=True):
         '''when `training`, samples action based on an `observation` and does book-keeping. returns best action when not.'''
@@ -156,11 +172,23 @@ class Agent(object):
                 self.net_actions: self.history['actions']})
 
             if self.learn_model:
-                # train model
+                # store observation/action trajectory
+                self.experience['xs'].append(self.history['xs'])
+                self.experience['actions'].append(self.history['actions'])
+
+                # train model on current match data
                 self.net_session.run(self.train_model, feed_dict={
                     self.net_xs: self.history['xs'],
                     self.net_nxs: self.history['nxs'],
                     self.net_actions: self.history['actions']})
+
+                # train model on random experience
+                xs, actions, nxs = zip(*np.asarray(self.sample_experience(100)))
+                #print(xp)
+                self.net_session.run(self.train_model, feed_dict={
+                    self.net_xs: xs,
+                    self.net_actions: actions,
+                    self.net_nxs: nxs})
 
             self.nb_games += 1
             # reset history
