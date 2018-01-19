@@ -53,11 +53,24 @@ class Agent(object):
         # loss functions of the outputs above
         self.loss_actions = -tf.reduce_mean(self.net_rewards * tf.log(tf.multiply(1 - self.net_actions, 1 - self.net_aps[:, 0]) + tf.multiply(self.net_actions, self.net_aps[:, 0])))
         self.loss_nxs = tf.reduce_mean(tf.squared_difference(self.net_nxs, self.net_nxes))
-        self.loss_nx_chain = tf.reduce_mean(tf.squared_difference(self.net_nxs, self.net_nxes))
 
         # training methods
         self.train_policy = tf.train.RMSPropOptimizer(learning_rate=.01, decay=.99).minimize(self.loss_actions)
-        self.train_model = tf.train.RMSPropOptimizer(learning_rate=.01, decay=.99).minimize(self.loss_nxs)
+        self.model_optimizer = tf.train.RMSPropOptimizer(learning_rate=.01, decay=.99)
+        self.train_model = self.model_optimizer.minimize(self.loss_nxs)
+
+        # chain train things
+        chain_optimizer = tf.train.RMSPropOptimizer(learning_rate=.01, decay=.99)
+        self.net_nxe_chain = [self.net_xs]
+        self.net_nxe_trainer_chain = [None]
+        for i in range(30):
+            nxe = tf.matmul(
+                tf.pad(tf.concat([tf.nn.leaky_relu(tf.matmul(tf.pad(self.net_nxe_chain[-1], [[0, 0], [0, 1]], constant_values=1), self.net_W1), alpha=0.1), [[self.net_actions[i]]]], axis=1), [[0, 0], [0, 1]], constant_values=1),
+                self.net_W3)
+            self.net_nxe_chain.append(nxe)
+
+            loss = tf.reduce_mean(tf.squared_difference(self.net_nxe_chain[1:i+2], self.net_nxs[:i+1]))
+            self.net_nxe_trainer_chain.append(chain_optimizer.minimize(loss))
 
         self.net_session = tf.InteractiveSession()
         tf.global_variables_initializer().run()
@@ -71,6 +84,14 @@ class Agent(object):
         # number of played/trained games
         self.nb_games = 0
 
+    def get_model_trajectory(self, x, actions):
+        '''estimates a chain of states starting with (but not including) state `x` assuming `actions`'''
+        trajectory = np.empty((len(actions), 4), dtype=np.float32)
+        for i, action in enumerate(actions):
+            x = self.net_nxes.eval(feed_dict={self.net_xs: [x], self.net_actions: [action]})[0]
+            trajectory[i] = x
+        return trajectory
+
     def evaluate_model(self):
         '''plots the observation history, the prediction of next observations and a chain prediction only depending on the first observation'''
         import matplotlib.pyplot as plt
@@ -80,12 +101,7 @@ class Agent(object):
         # bulk prediction
         nxes_bulk = np.asarray(self.net_nxes.eval(feed_dict={self.net_xs: self.history['xs'], self.net_actions: self.history['actions']}))
         # chain prediction
-        nxes_chain = []
-        x = self.history['xs'][0]
-        for action in self.history['actions']:
-            x = self.net_nxes.eval(feed_dict={self.net_xs: [x], self.net_actions: [action]})[0]
-            nxes_chain.append(x)
-        nxes_chain = np.asarray(nxes_chain)
+        nxes_chain = np.asarray(self.get_model_trajectory(self.history['xs'][0], self.history['actions']))
 
         # plot!
         plt.plot(range(len(xs)), xs[:, 0], color='black', label='ground truth')
@@ -126,7 +142,7 @@ class Agent(object):
     def get_discounted_rewards(self):
         '''adds up each reward and its following rewards with a discount factor. centers and normalizes.'''
         gamma = 0.99 # reward back-through-time aggregation ratio
-        r = np.asarray(self.history['rewards'], dtype=np.float64)
+        r = np.asarray(self.history['rewards'], dtype=np.float32)
 
         if np.all(r == 1):
             return None
@@ -173,8 +189,8 @@ class Agent(object):
 
             if self.learn_model:
                 # store observation/action trajectory
-                self.experience['xs'].append(self.history['xs'])
-                self.experience['actions'].append(self.history['actions'])
+                self.experience['xs'].append(np.asarray(self.history['xs'], dtype=np.float32))
+                self.experience['actions'].append(np.asarray(self.history['actions']))
 
                 # train model on current match data
                 self.net_session.run(self.train_model, feed_dict={
@@ -182,13 +198,31 @@ class Agent(object):
                     self.net_nxs: self.history['nxs'],
                     self.net_actions: self.history['actions']})
 
-                # train model on random experience
-                xs, actions, nxs = zip(*np.asarray(self.sample_experience(100)))
-                #print(xp)
-                self.net_session.run(self.train_model, feed_dict={
-                    self.net_xs: xs,
-                    self.net_actions: actions,
-                    self.net_nxs: nxs})
+                # # train model on random experience
+                # xs, actions, nxs = zip(*np.asarray(self.sample_experience(100)))
+
+                # self.net_session.run(self.train_model, feed_dict={
+                #     self.net_xs: xs,
+                #     self.net_actions: actions,
+                #     self.net_nxs: nxs})
+
+                # # chain-train model on random experienced trajecories (using grad_loss, which is probably wrong and implodes performance)
+                # i = np.random.randint(len(self.experience['xs']))
+                # chain = self.get_model_trajectory(self.experience['xs'][i][0], self.experience['actions'][i][:-1])
+                # self.net_session.run(self.model_optimizer.minimize(self.loss_nxs, grad_loss=chain_loss), feed_dict={
+                #     self.net_xs: self.experience['xs'][i][:-1],
+                #     self.net_actions: self.experience['actions'][i][:-1],
+                #     self.net_nxs: self.experience['xs'][i][1:]})
+
+                i = np.random.randint(len(self.experience['xs']))
+                trajectory = self.experience['xs'][i]
+                actions = self.experience['actions'][i]
+                n = len(actions) if len(actions) < 20 else 20
+                self.net_session.run(self.net_nxe_trainer_chain[n], feed_dict={
+                    self.net_xs: [trajectory[0]],
+                    self.net_actions: actions[:n-1],
+                    self.net_nxs: trajectory[1:n]
+                    })
 
             self.nb_games += 1
             # reset history
