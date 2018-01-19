@@ -32,9 +32,9 @@ class Agent(object):
 
         # observation input and trainable weights
         self.net_xs = tf.placeholder(tf.float32, [None, 4])
-        self.net_W1 = tf.get_variable("W1", shape=[4, nb_world_features], initializer=tf.contrib.layers.xavier_initializer())
-        self.net_W2 = tf.get_variable("W2", shape=[nb_world_features, 1], initializer=tf.contrib.layers.xavier_initializer())
-        self.net_W3 = tf.get_variable("W3", shape=[9, 4], initializer=tf.contrib.layers.xavier_initializer())
+        self.net_W1 = tf.get_variable("W1", shape=[4 + 1, nb_world_features], initializer=tf.contrib.layers.xavier_initializer())
+        self.net_W2 = tf.get_variable("W2", shape=[nb_world_features + 1, 1], initializer=tf.contrib.layers.xavier_initializer())
+        self.net_W3 = tf.get_variable("W3", shape=[nb_world_features + 2, 4], initializer=tf.contrib.layers.xavier_initializer())
 
         # backprop placeholders
         self.net_rewards = tf.placeholder(tf.float32, [None])
@@ -42,13 +42,13 @@ class Agent(object):
         self.net_nxs = tf.placeholder(tf.float32, [None, 4])
 
         # intermediate layer "world features"
-        self.net_world_features = tf.nn.leaky_relu(tf.matmul(self.net_xs, self.net_W1), alpha=0.1)
+        self.net_world_features = tf.nn.leaky_relu(tf.matmul(tf.pad(self.net_xs, [[0, 0], [0, 1]], constant_values=1), self.net_W1), alpha=0.1)
 
         # output: action probabilities
-        self.net_aps = tf.nn.sigmoid(tf.matmul(self.net_world_features, self.net_W2))
+        self.net_aps = tf.nn.sigmoid(tf.matmul(tf.pad(self.net_world_features, [[0, 0], [0, 1]], constant_values=1), self.net_W2))
 
         # output: next x estimates
-        self.net_nxes = tf.matmul(tf.concat([self.net_world_features, tf.expand_dims(self.net_actions, axis=1)], axis=1), self.net_W3)
+        self.net_nxes = tf.matmul(tf.pad(tf.concat([self.net_world_features, tf.expand_dims(self.net_actions, axis=1)], axis=1), [[0, 0], [0, 1]], constant_values=1), self.net_W3)
 
         # loss functions of the outputs above
         self.loss_actions = -tf.reduce_mean(self.net_rewards * tf.log(tf.multiply(1 - self.net_actions, 1 - self.net_aps[:, 0]) + tf.multiply(self.net_actions, self.net_aps[:, 0])))
