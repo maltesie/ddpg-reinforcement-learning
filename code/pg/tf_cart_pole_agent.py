@@ -154,7 +154,7 @@ class Agent(object):
                 nb_steps += 1
 
                 # `reward` is always 1, so use `done` instead
-                reward = -1. if done else 1.
+                reward = -1. if done and nb_steps < 500 else 1.
                 self.history['rewards'].append(reward)
                 self.history['nxs'].append(observation)
 
@@ -166,10 +166,11 @@ class Agent(object):
 
             # train policy
             discounted_rewards = self.get_discounted_rewards()
-            self.net_session.run(self.train_policy, feed_dict={
-                self.net_xs: self.history['xs'],
-                self.net_rewards: discounted_rewards,
-                self.net_actions: self.history['actions']})
+            if discounted_rewards is not None: # don't train on a fully successful episode, because all rewards are 1
+                self.net_session.run(self.train_policy, feed_dict={
+                    self.net_xs: self.history['xs'],
+                    self.net_rewards: discounted_rewards,
+                    self.net_actions: self.history['actions']})
 
             if self.learn_model:
                 # store observation/action trajectory
