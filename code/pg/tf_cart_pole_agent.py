@@ -26,7 +26,7 @@ class Agent(object):
         # x -> W1 -> W2 -> ap
         #       |
         #       v
-        # a -> W3 -> nx
+        # a -> W3 -> dx
 
         tf.reset_default_graph()
 
@@ -39,7 +39,7 @@ class Agent(object):
         # backprop placeholders
         self.net_rewards = tf.placeholder(tf.float32, [None])
         self.net_actions = tf.placeholder(tf.float32, [None])
-        self.net_nxs = tf.placeholder(tf.float32, [None, 4])
+        self.net_dxs = tf.placeholder(tf.float32, [None, 4])
 
         # intermediate layer "world features"
         self.net_world_features = tf.nn.leaky_relu(tf.matmul(tf.pad(self.net_xs, [[0, 0], [0, 1]], constant_values=1), self.net_W1), alpha=0.1)
@@ -48,16 +48,16 @@ class Agent(object):
         self.net_aps = tf.nn.sigmoid(tf.matmul(tf.pad(self.net_world_features, [[0, 0], [0, 1]], constant_values=1), self.net_W2))
 
         # output: next x estimates
-        self.net_nxes = tf.matmul(tf.pad(tf.concat([self.net_world_features, tf.expand_dims(self.net_actions, axis=1)], axis=1), [[0, 0], [0, 1]], constant_values=1), self.net_W3)
+        self.net_dxes = tf.matmul(tf.pad(tf.concat([self.net_world_features, tf.expand_dims(self.net_actions, axis=1)], axis=1), [[0, 0], [0, 1]], constant_values=1), self.net_W3)
 
         # loss functions of the outputs above
         self.loss_actions = -tf.reduce_mean(self.net_rewards * tf.log(tf.multiply(1 - self.net_actions, 1 - self.net_aps[:, 0]) + tf.multiply(self.net_actions, self.net_aps[:, 0])))
-        self.loss_nxs = tf.reduce_mean(tf.squared_difference(self.net_nxs, self.net_nxes))
         self.loss_nx_chain = tf.reduce_mean(tf.squared_difference(self.net_nxs, self.net_nxes))
+        self.loss_dxs = tf.reduce_mean(tf.squared_difference(self.net_dxs, self.net_dxes))
 
         # training methods
         self.train_policy = tf.train.RMSPropOptimizer(learning_rate=.01, decay=.99).minimize(self.loss_actions)
-        self.train_model = tf.train.RMSPropOptimizer(learning_rate=.01, decay=.99).minimize(self.loss_nxs)
+        self.train_model = tf.train.RMSPropOptimizer(learning_rate=.01, decay=.99).minimize(self.loss_dxs)
 
         self.net_session = tf.InteractiveSession()
         tf.global_variables_initializer().run()
@@ -71,6 +71,11 @@ class Agent(object):
         # number of played/trained games
         self.nb_games = 0
 
+    def estimate_next_observations(self, xs, actions):
+        '''returns the nxes (next x estimates)'''
+        dxs = self.net_dxes.eval(feed_dict={self.net_xs: xs, self.net_actions: actions})
+        return xs + dxs
+
     def evaluate_model(self):
         '''plots the observation history, the prediction of next observations and a chain prediction only depending on the first observation'''
         import matplotlib.pyplot as plt
@@ -78,12 +83,12 @@ class Agent(object):
         # real xs
         xs = np.asarray(self.history['xs'])
         # bulk prediction
-        nxes_bulk = np.asarray(self.net_nxes.eval(feed_dict={self.net_xs: self.history['xs'], self.net_actions: self.history['actions']}))
+        nxes_bulk = self.estimate_next_observations(self.history['xs'], self.history['actions'])
         # chain prediction
         nxes_chain = []
         x = self.history['xs'][0]
         for action in self.history['actions']:
-            x = self.net_nxes.eval(feed_dict={self.net_xs: [x], self.net_actions: [action]})[0]
+            x = self.estimate_next_observations([x], [action])[0]
             nxes_chain.append(x)
         nxes_chain = np.asarray(nxes_chain)
 
@@ -104,8 +109,8 @@ class Agent(object):
             t = np.random.randint(len(self.experience['xs'][i]) - 1)
             x = self.experience['xs'][i][t]
             action = self.experience['actions'][i][t]
-            nx = self.experience['xs'][i][t + 1]
-            result.append([x, action, nx])
+            dx = self.experience['xs'][i][t + 1] - x
+            result.append([x, action, dx])
         return result
 
     def get_action(self, observation, training=True):
