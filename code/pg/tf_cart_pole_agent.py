@@ -31,18 +31,18 @@ class Agent(object):
         tf.reset_default_graph()
 
         # observation input and trainable weights
-        self.net_xs = tf.placeholder(tf.float32, [None, 4])
+        self.net_xs = tf.placeholder(tf.float32, [None, 4], "X")
         self.net_W1 = tf.get_variable("W1", shape=[4 + 1, nb_world_features], initializer=tf.contrib.layers.xavier_initializer())
         self.net_W2 = tf.get_variable("W2", shape=[nb_world_features + 1, 1], initializer=tf.contrib.layers.xavier_initializer())
         self.net_W3 = tf.get_variable("W3", shape=[nb_world_features + 2, 4], initializer=tf.contrib.layers.xavier_initializer())
 
         # backprop placeholders
-        self.net_rewards = tf.placeholder(tf.float32, [None])
-        self.net_actions = tf.placeholder(tf.float32, [None])
-        self.net_dxs = tf.placeholder(tf.float32, [None, 4])
+        self.net_rewards = tf.placeholder(tf.float32, [None], "R")
+        self.net_actions = tf.placeholder(tf.float32, [None], "A")
+        self.net_dxs = tf.placeholder(tf.float32, [None, 4], "dX")
 
         # intermediate layer "world features"
-        self.net_world_features = tf.nn.leaky_relu(tf.matmul(tf.pad(self.net_xs, [[0, 0], [0, 1]], constant_values=1), self.net_W1), alpha=0.1)
+        self.net_world_features = tf.nn.leaky_relu(tf.matmul(tf.pad(self.net_xs, [[0, 0], [0, 1]], constant_values=1), self.net_W1), alpha=self.rect_leakiness)
 
         # output: action probabilities
         self.net_aps = tf.nn.sigmoid(tf.matmul(tf.pad(self.net_world_features, [[0, 0], [0, 1]], constant_values=1), self.net_W2))
@@ -52,7 +52,6 @@ class Agent(object):
 
         # loss functions of the outputs above
         self.loss_actions = -tf.reduce_mean(self.net_rewards * tf.log(tf.multiply(1 - self.net_actions, 1 - self.net_aps[:, 0]) + tf.multiply(self.net_actions, self.net_aps[:, 0])))
-        self.loss_nx_chain = tf.reduce_mean(tf.squared_difference(self.net_nxs, self.net_nxes))
         self.loss_dxs = tf.reduce_mean(tf.squared_difference(self.net_dxs, self.net_dxes))
 
         # training methods
@@ -81,7 +80,7 @@ class Agent(object):
         import matplotlib.pyplot as plt
 
         # real xs
-        xs = np.asarray(self.history['xs'])
+        xs = np.asarray([self.history['xs'][0]] + self.history['nxs'])
         # bulk prediction
         nxes_bulk = self.estimate_next_observations(self.history['xs'], self.history['actions'])
         # chain prediction
