@@ -107,7 +107,7 @@ class Agent(object):
         # experience storage remembered forever for learning (key -> list of lists of vectors)
         self.experience = defaultdict(list)
 
-        # number of played/trained games
+        # number of played/trained games in the real environment
         self.nb_games = 0
 
     def estimate_next_observations(self, xs, actions):
@@ -195,7 +195,9 @@ class Agent(object):
     def train_games(self, environment, n):
         '''trains on `n` games in `environment`'''
         nb_stepss = [] # list of steps achieved per episode
-        for _ in range(n):
+        nb_games_batch = 0 # number of games trained in this batch until now
+
+        while nb_games_batch < n:
             # whether to sample the learned model or the real environment
             sample_model = np.random.random() < exp_anneal(max(self.nb_games / 3000., 0), 0.01, 0.5) # TODO: tune/params
 
@@ -227,11 +229,13 @@ class Agent(object):
                 self.history['rewards'].append(reward)
                 self.history['nxs'].append(observation)
 
-            # store number of achieved steps
-            nb_stepss.append(nb_steps)
 
             # if self.nb_games % 100 == 0:
             #     self.evaluate_model()
+            if not sample_model:
+                self.nb_games += 1
+                nb_games_batch += 1
+                nb_stepss.append(nb_steps) # store number of achieved steps
 
             # train policy
             discounted_rewards = self.get_discounted_rewards()
@@ -253,9 +257,6 @@ class Agent(object):
                         self.net_xs: xs,
                         self.net_actions: actions,
                         self.net_dxs: dxs})
-
-            if not sample_model:
-                self.nb_games += 1
 
             # reset history
             self.history.clear()
