@@ -33,22 +33,52 @@ class Agent(object):
         # observation input and trainable weights
         self.net_xs = tf.placeholder(tf.float32, [None, 4], "X")
         self.net_W1 = tf.get_variable("W1", shape=[4 + 1, nb_world_features], initializer=tf.contrib.layers.xavier_initializer())
-        self.net_W2 = tf.get_variable("W2", shape=[nb_world_features + 1, 1], initializer=tf.contrib.layers.xavier_initializer())
-        self.net_W3 = tf.get_variable("W3", shape=[nb_world_features + 2, 4], initializer=tf.contrib.layers.xavier_initializer())
+        self.net_W2_1 = tf.get_variable("W2_1", shape=[nb_world_features + 1, nb_world_features + 1], initializer=tf.contrib.layers.xavier_initializer())
+        self.net_W2_2 = tf.get_variable("W2_2", shape=[nb_world_features + 2, 1], initializer=tf.contrib.layers.xavier_initializer())
+        self.net_W3_1 = tf.get_variable("W3_1", shape=[nb_world_features + 2, nb_world_features + 2], initializer=tf.contrib.layers.xavier_initializer())
+        self.net_W3_2 = tf.get_variable("W3_2", shape=[nb_world_features + 3, 4], initializer=tf.contrib.layers.xavier_initializer())
 
         # backprop placeholders
         self.net_rewards = tf.placeholder(tf.float32, [None], "R")
         self.net_actions = tf.placeholder(tf.float32, [None], "A")
         self.net_dxs = tf.placeholder(tf.float32, [None, 4], "dX")
 
-        # intermediate layer "world features"
+        # shared first hidden layer: "world features"
         self.net_world_features = tf.nn.leaky_relu(tf.matmul(tf.pad(self.net_xs, [[0, 0], [0, 1]], constant_values=1), self.net_W1), alpha=self.rect_leakiness)
 
         # output: action probabilities
-        self.net_aps = tf.nn.sigmoid(tf.matmul(tf.pad(self.net_world_features, [[0, 0], [0, 1]], constant_values=1), self.net_W2))
+        self.net_aps = tf.nn.sigmoid(   # third layer, sigmoid is good for classification
+            tf.matmul(
+                tf.pad(                 # bias
+                    tf.nn.leaky_relu(   # second layer
+                        tf.matmul(
+                            tf.pad(self.net_world_features, [[0, 0], [0, 1]], constant_values=1),   # bias
+                            self.net_W2_1
+                        ),
+                        alpha=self.rect_leakiness
+                    ), [[0, 0], [0, 1]], constant_values=1
+                ),
+                self.net_W2_2
+            )
+        )
 
         # output: next x estimates
-        self.net_dxes = tf.matmul(tf.pad(tf.concat([self.net_world_features, tf.expand_dims(self.net_actions, axis=1)], axis=1), [[0, 0], [0, 1]], constant_values=1), self.net_W3)
+        self.net_dxes = tf.matmul(      # third layer, no activation function
+            tf.pad(                     # bias
+                tf.nn.leaky_relu(       # second layer, relu seems better for general regression
+                    tf.matmul(
+                        tf.pad(         # bias
+                            tf.concat([self.net_world_features, tf.expand_dims(self.net_actions, axis=1)], axis=1), # merge first layer with action
+                            [[0, 0], [0, 1]], constant_values=1
+                        ),
+                        self.net_W3_1
+                    ),
+                    alpha=self.rect_leakiness
+                ),
+                [[0, 0], [0, 1]], constant_values=1
+            ),
+            self.net_W3_2
+        )
 
         # loss functions of the outputs above
         self.loss_actions = -tf.reduce_mean(self.net_rewards * tf.log(tf.multiply(1 - self.net_actions, 1 - self.net_aps[:, 0]) + tf.multiply(self.net_actions, self.net_aps[:, 0])))
