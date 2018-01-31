@@ -18,8 +18,9 @@ class Agent(object):
             learning_rate = 0.01,
             rms_decay_rate = 0.99,
             nb_world_features = 8,  # number of first layer's neurons
-            learn_model=True,
             rect_leakiness=0.1,
+            learn_model=True,
+            sample_model=True,
             model_training_noise=0.1):
 
         assert(batch_size == 1) # not yet supported
@@ -28,8 +29,9 @@ class Agent(object):
         self.learning_rate = learning_rate
         self.rms_decay_rate = rms_decay_rate
         self.nb_world_features = nb_world_features
-        self.learn_model = learn_model
         self.rect_leakiness = rect_leakiness
+        self.learn_model = learn_model
+        self.sample_model = sample_model
         self.model_training_noise = model_training_noise
 
         # neural net setup:
@@ -161,7 +163,7 @@ class Agent(object):
         return xs, actions, dxs
 
     def get_action(self, observation, training=True):
-        '''when `training`, samples action based on an `observation` and does book-keeping. returns best action when not.'''
+        '''samples action based on an `observation` and does book-keeping when `training`. returns best action when not.'''
         # get action probability
         y = self.net_aps.eval(feed_dict={self.net_xs: [observation]})[0][0]
         if training:
@@ -199,7 +201,7 @@ class Agent(object):
 
         while nb_games_batch < n:
             # whether to sample the learned model or the real environment
-            sample_model = np.random.random() < exp_anneal(max(self.nb_games / 3000., 0), 0.01, 0.5) # TODO: tune/params
+            sample_model = self.sample_model and (np.random.random() < exp_anneal(max(self.nb_games / 3000., 0), 0.01, 0.5)) # TODO: tune/params
 
             if sample_model:
                 # TODO: task agnosticity: initial value ranges/distributions are not given -> learn?
