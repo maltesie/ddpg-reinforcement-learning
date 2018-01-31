@@ -35,13 +35,17 @@ if mode == 'demo':
         print('\nTrained %i games. Showtime!' % agent.nb_games)
 
         observation = env.reset()
+        nb_steps = 0
         done = False
         while not done:
             env.render()
 
             action = agent.get_action(observation, training=False)
             observation, reward, done, info = env.step(action)
+            nb_steps += 1
             time.sleep(0.075)
+
+        print('-> %i steps' % nb_steps)
 
 elif mode == 'evaluate':
     import matplotlib.pyplot as plt
