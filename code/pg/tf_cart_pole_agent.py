@@ -4,6 +4,14 @@ import tensorflow as tf
 import numpy as np
 from collections import defaultdict
 
+
+def exp_anneal(gamma, a, b):
+    '''returns an exponentially decreasing value between `a` > `b` or
+       an exponentially increasing value between `a` < `b` for progress `gamma` [0 .. 1]'''
+    a, b = np.log(a), np.log(b)
+    return np.exp(gamma * (b - a) + a)
+
+
 class Agent(object):
     def __init__(self,
             batch_size = 1,
@@ -178,13 +186,30 @@ class Agent(object):
         '''trains on `n` games in `environment`'''
         nb_stepss = [] # list of steps achieved per episode
         for _ in range(n):
-            observation = environment.reset()
+            # whether to sample the learned model or the real environment
+            sample_model = np.random.random() < exp_anneal(max(self.nb_games / 3000., 0), 0.01, 0.5) # TODO: tune/params
+
+            if sample_model:
+                # TODO: task agnosticity: initial value ranges/distributions are not given -> learn?
+                observation = np.random.random(4) * [.1, .1, .1, .1] - [.05, .05, .05, .05]
+            else:
+                observation = environment.reset()
+
             done = False
             nb_steps = 0
+
             while not done:
                 action = self.get_action(observation)
 
-                observation, reward, done, info = environment.step(action)
+                if sample_model:
+                    observation = self.estimate_next_observations([observation], [action])[0]
+                    # TODO: task agnosticity: does not apply to all tasks
+                    done = (
+                        not (np.all(observation < environment.observation_space.high) and np.all(observation > environment.observation_space.low))
+                        or nb_steps >= 499
+                        )
+                else:
+                    observation, reward, done, info = environment.step(action)
                 nb_steps += 1
 
                 # `reward` is always 1, so use `done` instead
@@ -206,7 +231,7 @@ class Agent(object):
                     self.net_rewards: discounted_rewards,
                     self.net_actions: self.history['actions']})
 
-            if self.learn_model:
+            if self.learn_model and not sample_model:
                 # store observation/action trajectory
                 self.experience['xs'].append(self.history['xs'])
                 self.experience['actions'].append(self.history['actions'])
@@ -219,7 +244,8 @@ class Agent(object):
                         self.net_actions: actions,
                         self.net_dxs: dxs})
 
-            self.nb_games += 1
+            if not sample_model:
+                self.nb_games += 1
 
             # reset history
             self.history.clear()
