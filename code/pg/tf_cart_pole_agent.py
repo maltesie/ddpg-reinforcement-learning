@@ -56,7 +56,7 @@ class Agent(object):
 
         # training methods
         self.train_policy = tf.train.RMSPropOptimizer(learning_rate=.01, decay=.99).minimize(self.loss_actions)
-        self.train_model = tf.train.RMSPropOptimizer(learning_rate=.01, decay=.99).minimize(self.loss_dxs)
+        self.train_model = tf.train.RMSPropOptimizer(learning_rate=.001, decay=.99).minimize(self.loss_dxs)
 
         self.net_session = tf.InteractiveSession()
         tf.global_variables_initializer().run()
@@ -181,21 +181,16 @@ class Agent(object):
                 self.experience['xs'].append(self.history['xs'])
                 self.experience['actions'].append(self.history['actions'])
 
-                # train model on current match data
-                self.net_session.run(self.train_model, feed_dict={
-                    self.net_xs: self.history['xs'],
-                    self.net_nxs: self.history['nxs'],
-                    self.net_actions: self.history['actions']})
-
                 # train model on random experience
-                xs, actions, nxs = zip(*np.asarray(self.sample_experience(100)))
-                #print(xp)
-                self.net_session.run(self.train_model, feed_dict={
-                    self.net_xs: xs,
-                    self.net_actions: actions,
-                    self.net_nxs: nxs})
+                for _ in range(20): # TODO: param: number of updates
+                    xs, actions, dxs = zip(*np.asarray(self.sample_experience(100))) # TODO: param: batch size
+                    self.net_session.run(self.train_model, feed_dict={
+                        self.net_xs: xs,
+                        self.net_actions: actions,
+                        self.net_dxs: dxs})
 
             self.nb_games += 1
+
             # reset history
             self.history.clear()
 
