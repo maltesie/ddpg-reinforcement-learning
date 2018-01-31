@@ -19,7 +19,8 @@ class Agent(object):
             rms_decay_rate = 0.99,
             nb_world_features = 8,  # number of first layer's neurons
             learn_model=True,
-            rect_leakiness=0.1):
+            rect_leakiness=0.1,
+            model_training_noise=0.1):
 
         assert(batch_size == 1) # not yet supported
 
@@ -29,6 +30,7 @@ class Agent(object):
         self.nb_world_features = nb_world_features
         self.learn_model = learn_model
         self.rect_leakiness = rect_leakiness
+        self.model_training_noise = model_training_noise
 
         # neural net setup:
         # x -> W1 -> W2 -> ap
@@ -138,17 +140,25 @@ class Agent(object):
         plt.legend()
         plt.show()
 
-    def sample_experience(self, n):
-        '''returns `n` random experience data points'''
-        result = []
-        for _ in range(n):
-            i = np.random.randint(len(self.experience['xs']))
-            t = np.random.randint(len(self.experience['xs'][i]) - 1)
-            x = self.experience['xs'][i][t]
-            action = self.experience['actions'][i][t]
-            dx = self.experience['xs'][i][t + 1] - x
-            result.append([x, action, dx])
-        return result
+    def sample_experience(self, n, noise=0.):
+        '''returns `n` random experience data points, optionally with gaussian noise of
+           standard variances taken from the respective sample dimensions and scaled by `noise`'''
+        # TODO: task agnosticity
+        xs, actions, dxs = np.empty((n, 4)), np.empty(n), np.empty((n, 4))
+        for i in range(n):
+            j = np.random.randint(len(self.experience['xs']))
+            t = np.random.randint(len(self.experience['xs'][j]) - 1)
+            xs[i] = self.experience['xs'][j][t]
+            actions[i] = self.experience['actions'][j][t]
+            dxs[i] = self.experience['xs'][j][t + 1] - xs[i]
+
+        # noise!
+        if noise > 0:
+            stds = np.std(xs, axis=0)
+            for i, std in enumerate(stds):
+                xs[:, i] += np.random.normal(0, std * noise, len(xs))
+
+        return xs, actions, dxs
 
     def get_action(self, observation, training=True):
         '''when `training`, samples action based on an `observation` and does book-keeping. returns best action when not.'''
@@ -238,7 +248,7 @@ class Agent(object):
 
                 # train model on random experience
                 for _ in range(20): # TODO: param: number of updates
-                    xs, actions, dxs = zip(*np.asarray(self.sample_experience(100))) # TODO: param: batch size
+                    xs, actions, dxs = self.sample_experience(100, self.model_training_noise) # TODO: param: batch size
                     self.net_session.run(self.train_model, feed_dict={
                         self.net_xs: xs,
                         self.net_actions: actions,
