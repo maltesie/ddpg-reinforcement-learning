@@ -21,7 +21,8 @@ class Agent(object):
             rect_leakiness=0.1,
             learn_model=True,
             sample_model=True,
-            model_training_noise=0.1):
+            model_training_noise=0.1,
+            replay_buffer_size=5000):
 
         assert(batch_size == 1) # not yet supported
 
@@ -33,6 +34,7 @@ class Agent(object):
         self.learn_model = learn_model
         self.sample_model = sample_model
         self.model_training_noise = model_training_noise
+        self.replay_buffer_size = replay_buffer_size
 
         # neural net setup:
         # x -> W1 -> W2 -> ap
@@ -148,11 +150,10 @@ class Agent(object):
         # TODO: task agnosticity
         xs, actions, dxs = np.empty((n, 4)), np.empty(n), np.empty((n, 4))
         for i in range(n):
-            j = np.random.randint(len(self.experience['xs']))
-            t = np.random.randint(len(self.experience['xs'][j]) - 1)
-            xs[i] = self.experience['xs'][j][t]
-            actions[i] = self.experience['actions'][j][t]
-            dxs[i] = self.experience['xs'][j][t + 1] - xs[i]
+            t = np.random.randint(len(self.experience['xs']))
+            xs[i] = self.experience['xs'][t]
+            actions[i] = self.experience['actions'][t]
+            dxs[i] = self.experience['nxs'][t] - xs[i]
 
         # noise!
         if noise > 0:
@@ -161,6 +162,34 @@ class Agent(object):
                 xs[:, i] += np.random.normal(0, std * noise, len(xs))
 
         return xs, actions, dxs
+
+    def forget_experience(self, target_size):
+        '''shrinks the replay buffer to `target_size` by removing the items with least error'''
+        n = len(self.experience['xs'])
+        nb_remove = n - target_size
+        if nb_remove <= 0:
+            return
+
+        nxs = np.asarray(self.experience['nxs'])
+
+        # compute next x estimates
+        nxes = self.estimate_next_observations(self.experience['xs'], self.experience['actions'])
+        # normalize
+        stds = np.std(nxs, axis=0)
+        nxs /= stds
+        nxes /= stds
+        # find candidates with lowest error
+        errors_and_indices = list(zip(np.sum((nxs - nxes) ** 2, axis=1), range(n)))
+        sorted_indices = list(zip(*sorted(errors_and_indices)))[1]
+        to_be_removed = [False] * n
+        for i in sorted_indices[nb_remove:]:
+            to_be_removed[i] = True
+        # remove them, because they're boring
+        self.experience['xs'] = [e for i, e in enumerate(self.experience['xs']) if to_be_removed[i]]
+        self.experience['actions'] = [e for i, e in enumerate(self.experience['actions']) if to_be_removed[i]]
+        self.experience['nxs'] = [e for i, e in enumerate(self.experience['nxs']) if to_be_removed[i]]
+
+        return nb_remove
 
     def get_action(self, observation, training=True):
         '''samples action based on an `observation` and does book-keeping when `training`. returns best action when not.'''
@@ -249,8 +278,13 @@ class Agent(object):
 
             if self.learn_model and not sample_model:
                 # store observation/action trajectory
-                self.experience['xs'].append(self.history['xs'])
-                self.experience['actions'].append(self.history['actions'])
+                self.experience['xs'] += self.history['xs']
+                self.experience['actions'] += self.history['actions']
+                self.experience['nxs'] += self.history['nxs']
+
+                # remove experience when the buffer gets too big
+                if len(self.experience['xs']) >= 1.5 * self.replay_buffer_size:
+                    self.forget_experience(self.replay_buffer_size)
 
                 # train model on random experience
                 for _ in range(20): # TODO: param: number of updates
