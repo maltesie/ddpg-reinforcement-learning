@@ -69,7 +69,7 @@ elif mode == 'evaluate':
             avg_steps_achieved = agent.evaluate_games(env, nb_evaluations)
             scoress[t].append(avg_steps_achieved)
     # include hyperparameters in filename where to store the individual scores of each training run
-    filename = 'eval-scores-%s.txt' % '.'.join([str(k) + '-' + str(v) for k, v in param.items()])
+    filename = 'eval-scores-%s.txt' % '.'.join([str(k) + '-' + str(v) for k, v in sorted(param.items())])
     with open(filename, 'w') as f:
         [f.write(str(scores) + '\n') for scores in scoress]
     # compute mean of scores across training runs and standard error of the mean
