@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-colors = ['#0055AA', '#CC0022', '#DDB800']
+colors = ['#0055AA', '#CC0022', '#DDB800', '#007728', '#009FEE']
 
 
 def plot(filenames, step_size):
