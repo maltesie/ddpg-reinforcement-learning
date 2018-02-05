@@ -18,11 +18,12 @@ class Agent(object):
             learning_rate = 0.01,
             rms_decay_rate = 0.99,
             nb_world_features = 8,  # number of first layer's neurons
-            rect_leakiness=0.1,
+            rect_leakiness=0.01,
             learn_model=True,
             sample_model=True,
             model_training_noise=0.1,
-            replay_buffer_size=5000):
+            replay_buffer_size=5000,
+            share_optimizer=True):
 
         assert(batch_size == 1) # not yet supported
 
@@ -99,8 +100,13 @@ class Agent(object):
         self.loss_dxs = tf.reduce_mean(tf.squared_difference(self.net_dxs, self.net_dxes))
 
         # training methods
-        self.train_policy = tf.train.RMSPropOptimizer(learning_rate=.01, decay=.99).minimize(self.loss_actions)
-        self.train_model = tf.train.RMSPropOptimizer(learning_rate=.001, decay=.99).minimize(self.loss_dxs)
+        if share_optimizer:
+            optimizer = tf.train.RMSPropOptimizer(learning_rate=self.learning_rate, decay=self.rms_decay_rate)
+            self.train_policy = optimizer.minimize(self.loss_actions)
+            self.train_model = optimizer.minimize(self.loss_dxs)
+        else:
+            self.train_policy = tf.train.RMSPropOptimizer(learning_rate=self.learning_rate, decay=self.rms_decay_rate).minimize(self.loss_actions)
+            self.train_model = tf.train.RMSPropOptimizer(learning_rate=.1 * self.learning_rate, decay=self.rms_decay_rate).minimize(self.loss_dxs)
 
         self.net_session = tf.InteractiveSession()
         tf.global_variables_initializer().run()
@@ -260,9 +266,9 @@ class Agent(object):
                 self.history['rewards'].append(reward)
                 self.history['nxs'].append(observation)
 
-
             # if self.nb_games % 100 == 0:
             #     self.evaluate_model()
+
             if not sample_model:
                 self.nb_games += 1
                 nb_games_batch += 1
