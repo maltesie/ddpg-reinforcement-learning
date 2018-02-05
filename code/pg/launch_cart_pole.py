@@ -17,7 +17,7 @@ else:
 env = gym.make('CartPole-v1')
 
 # hyperparameters
-param = {'learn_model': True, 'rect_leakiness': 0.1}
+param = {'learn_model': True, 'sample_model': True, 'nb_world_features': 64, 'share_optimizer': True}
 
 
 if mode == 'demo':
