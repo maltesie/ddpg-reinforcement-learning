@@ -60,6 +60,7 @@ class Agent(object):
 
         # shared first hidden layer: "world features"
         self.net_world_features = tf.nn.leaky_relu(tf.matmul(tf.pad(self.net_xs, [[0, 0], [0, 1]], constant_values=1), self.net_W1), alpha=self.rect_leakiness)
+        # self.net_world_features = tf.contrib.layers.fully_connected(self.net_xs, nb_world_features, lambda x: tf.nn.leaky_relu(x, alpha=self.rect_leakiness))
 
         # output: action probabilities
         self.net_aps = tf.nn.sigmoid(   # third layer, sigmoid is good for classification
@@ -76,6 +77,10 @@ class Agent(object):
                 self.net_W2_2
             )
         )
+        # hidden_layer1 = tf.contrib.layers.fully_connected(self.net_xs, nb_world_features, lambda x: tf.nn.leaky_relu(x, alpha=self.rect_leakiness))
+        # hidden_layer2 = tf.contrib.layers.fully_connected(hidden_layer1, nb_world_features, lambda x: tf.nn.leaky_relu(x, alpha=self.rect_leakiness))
+        # hidden_layer2 = tf.contrib.layers.fully_connected(self.net_world_features, nb_world_features, lambda x: tf.nn.leaky_relu(x, alpha=self.rect_leakiness))
+        # self.net_aps = tf.contrib.layers.fully_connected(hidden_layer2, 1, tf.nn.sigmoid)
 
         # output: next x estimates
         self.net_dxes = tf.matmul(      # third layer, no activation function
@@ -94,6 +99,11 @@ class Agent(object):
             ),
             self.net_W3_2
         )
+        # combined_input = tf.concat([self.net_xs, tf.expand_dims(self.net_actions, axis=1)], axis=1)
+        # hidden_layer1 = tf.contrib.layers.fully_connected(combined_input, nb_world_features, lambda x: tf.nn.leaky_relu(x, alpha=self.rect_leakiness))
+        # combined_input = tf.concat([self.net_world_features, tf.expand_dims(self.net_actions, axis=1)], axis=1)
+        # hidden_layer2 = tf.contrib.layers.fully_connected(combined_input, nb_world_features, lambda x: tf.nn.leaky_relu(x, alpha=self.rect_leakiness))
+        # self.net_dxes = tf.contrib.layers.fully_connected(hidden_layer2, 4, None)
 
         # loss functions of the outputs above
         self.loss_actions = -tf.reduce_mean(self.net_rewards * tf.log(tf.multiply(1 - self.net_actions, 1 - self.net_aps[:, 0]) + tf.multiply(self.net_actions, self.net_aps[:, 0])))
