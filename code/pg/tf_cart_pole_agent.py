@@ -140,6 +140,16 @@ class Agent(object):
 
         return xs, actions, dxs
 
+    def get_model_error(self, xs, actions, nxs):
+        nxs = np.asarray(nxs)
+        nxes = self.estimate_next_observations(xs, actions)
+        # normalize
+        stds = np.std(nxs, axis=0)
+        nxs /= stds
+        nxes /= stds
+        # find candidates with lowest error
+        return np.mean((nxs - nxes) ** 2)
+
     def forget_experience(self, target_size):
         '''shrinks the replay buffer to `target_size` by removing the items with least error'''
         n = len(self.experience['xs'])
