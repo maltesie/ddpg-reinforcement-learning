@@ -17,8 +17,9 @@ else:
 env = gym.make('CartPole-v1')
 
 # hyperparameters
-param = {'learn_model': True, 'sample_model': True, 'nb_world_features': 64, 'share_optimizer': True}
+param = {'learn_model': 'delta', 'sample_model': True, 'multitask': 'none'}
 
+print('parameters:', param)
 
 if mode == 'demo':
     agent = Agent(**param)
