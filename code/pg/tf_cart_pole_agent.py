@@ -103,6 +103,7 @@ class Agent(object):
 
         # number of played/trained games in the real environment
         self.nb_games = 0
+        self.nb_phonies = 0
 
     def estimate_next_observations(self, xs, actions):
         '''returns the nxes (next x estimates)'''
@@ -243,9 +244,14 @@ class Agent(object):
         nb_stepss = [] # list of steps achieved per episode
         nb_games_batch = 0 # number of games trained in this batch until now
 
+        sample_model = False
+
         while nb_games_batch < n:
             # whether to sample the learned model or the real environment
-            sample_model = self.sample_model and (np.random.random() < exp_anneal(max(self.nb_games / 3000., 0), 0.01, 0.5)) # TODO: tune/params
+            #sample_model = self.sample_model and (np.random.random() < exp_anneal(max(self.nb_games / 3000., 0), 0.02, 0.5)) # TODO: tune/params
+            # phase-based model sampling
+            if self.sample_model and (self.nb_games % 20 == 0) and (self.nb_phonies % 20 == 0):
+                sample_model = self.nb_games > self.nb_phonies
 
             if sample_model:
                 # TODO: task agnosticity: initial value ranges/distributions are not given -> learn?
@@ -275,10 +281,12 @@ class Agent(object):
                 self.history['rewards'].append(reward)
                 self.history['nxs'].append(observation)
 
-            # if self.nb_games % 100 == 0:
+            # if (self.nb_games) % 100 == 0 and not sample_model:
             #     self.evaluate_model()
 
-            if not sample_model:
+            if sample_model:
+                self.nb_phonies += 1
+            else:
                 self.nb_games += 1
                 nb_games_batch += 1
                 nb_stepss.append(nb_steps) # store number of achieved steps
