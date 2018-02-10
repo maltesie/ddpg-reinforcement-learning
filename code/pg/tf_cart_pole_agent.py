@@ -4,6 +4,7 @@ import tensorflow as tf
 import numpy as np
 from collections import defaultdict
 
+import train_model
 
 def exp_anneal(gamma, a, b):
     '''returns an exponentially decreasing value between `a` > `b` or
@@ -88,6 +89,12 @@ class Agent(object):
         # experience storage remembered forever for learning (key -> list of lists of vectors)
         self.experience = defaultdict(list)
 
+        try:
+            self.model_test_set = train_model.read_trajectories('cartpole-trajectories.txt', 1)[1]
+            self.model_errors = []
+        except IOError as e:
+            self.model_test_set = None
+
         # number of played/trained games in the real environment
         self.nb_games = 0
 
@@ -119,6 +126,11 @@ class Agent(object):
         plt.plot(X, nxes_bulk[:, 0], color='#0055AA', label='bulk prediction')
         plt.plot(X, nxes_chain[:, 0], color='#CC0022', label='chain prediction')
         plt.legend()
+        plt.show()
+
+        plt.xlabel('number of episodes')
+        plt.ylabel('model error')
+        plt.plot(self.model_errors)
         plt.show()
 
     def sample_experience(self, n, noise=0.):
@@ -277,6 +289,7 @@ class Agent(object):
                 if len(self.experience['xs']) >= 1.5 * self.replay_buffer_size:
                     self.forget_experience(self.replay_buffer_size)
 
+                self.model_errors.append(self.get_model_error(*self.model_test_set))
                 # train model on random experience
                 for _ in range(20): # TODO: param: number of updates
                     xs, actions, dxs = self.sample_experience(100, self.model_training_noise) # TODO: param: batch size
