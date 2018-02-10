@@ -23,7 +23,7 @@ class Agent(object):
             sample_model=True,
             model_training_noise=0.1,
             replay_buffer_size=5000,
-            share_optimizer=True):
+            multitask=False):
 
         assert(batch_size == 1) # not yet supported
 
@@ -36,16 +36,11 @@ class Agent(object):
         self.sample_model = sample_model
         self.model_training_noise = model_training_noise
         self.replay_buffer_size = replay_buffer_size
-
-        # neural net setup:
-        # x -> W1 -> W2 -> ap
-        #       |
-        #       v
-        # a -> W3 -> dx
+        self.multitask = multitask
 
         tf.reset_default_graph()
 
-        # observation input and trainable weights
+        # observation input
         self.net_xs = tf.placeholder(tf.float32, [None, 4], "X")
 
         # backprop placeholders
@@ -53,34 +48,32 @@ class Agent(object):
         self.net_actions = tf.placeholder(tf.float32, [None], "A")
         self.net_dxs = tf.placeholder(tf.float32, [None, 4], "dX")
 
-        # shared first hidden layer: "world features"
-        self.net_world_features = tf.contrib.layers.fully_connected(self.net_xs, nb_world_features, lambda x: tf.nn.leaky_relu(x, alpha=self.rect_leakiness))
-
-        # output: action probabilities
-        # hidden_layer1 = tf.contrib.layers.fully_connected(self.net_xs, nb_world_features, lambda x: tf.nn.leaky_relu(x, alpha=self.rect_leakiness))
-        # hidden_layer2 = tf.contrib.layers.fully_connected(hidden_layer1, nb_world_features, lambda x: tf.nn.leaky_relu(x, alpha=self.rect_leakiness))
-        hidden_layer2 = tf.contrib.layers.fully_connected(self.net_world_features, nb_world_features, lambda x: tf.nn.leaky_relu(x, alpha=self.rect_leakiness))
+        # net 1: action probabilities
+        net_world_features = tf.contrib.layers.fully_connected(self.net_xs, nb_world_features, lambda x: tf.nn.leaky_relu(x, alpha=self.rect_leakiness))
+        hidden_layer2 = tf.contrib.layers.fully_connected(net_world_features, nb_world_features, lambda x: tf.nn.leaky_relu(x, alpha=self.rect_leakiness))
         self.net_aps = tf.contrib.layers.fully_connected(hidden_layer2, 1, tf.nn.sigmoid)
+        # for multitask
+        self.net_dxes_multitask = tf.contrib.layers.fully_connected(hidden_layer2, 4, None)
 
-        # output: delta-x estimates (model)
-        # combined_input = tf.concat([self.net_xs, tf.expand_dims(self.net_actions, axis=1)], axis=1)
-        # hidden_layer1 = tf.contrib.layers.fully_connected(combined_input, nb_world_features, lambda x: tf.nn.leaky_relu(x, alpha=self.rect_leakiness))
-        combined_input = tf.concat([self.net_world_features, tf.expand_dims(self.net_actions, axis=1)], axis=1)
-        hidden_layer2 = tf.contrib.layers.fully_connected(combined_input, nb_world_features, lambda x: tf.nn.leaky_relu(x, alpha=self.rect_leakiness))
-        self.net_dxes = tf.contrib.layers.fully_connected(hidden_layer2, 4, None)
+        # net 2: delta-x estimates (model)
+        combined_input = tf.concat([self.net_xs, tf.expand_dims(self.net_actions, axis=1)], axis=1)
+        hidden_layer1 = tf.contrib.layers.fully_connected(combined_input, nb_world_features * 10, lambda x: tf.nn.leaky_relu(x, alpha=self.rect_leakiness))
+        # TODO: maybe second hidden layer
+        self.net_dxes = tf.contrib.layers.fully_connected(hidden_layer1, 4, None)
 
         # loss functions of the outputs above
         self.loss_actions = -tf.reduce_mean(self.net_rewards * tf.log(tf.multiply(1 - self.net_actions, 1 - self.net_aps[:, 0]) + tf.multiply(self.net_actions, self.net_aps[:, 0])))
+        self.loss_actions_dxs_multitask = tf.reduce_mean(tf.squared_difference(self.net_dxs, self.net_dxes_multitask)) + self.loss_actions
         self.loss_dxs = tf.reduce_mean(tf.squared_difference(self.net_dxs, self.net_dxes))
 
         # training methods
-        if share_optimizer:
-            optimizer = tf.train.RMSPropOptimizer(learning_rate=self.learning_rate, decay=self.rms_decay_rate)
-            self.train_policy = optimizer.minimize(self.loss_actions)
-            self.train_model = optimizer.minimize(self.loss_dxs)
+        if multitask:
+            # minimize policy and observation prediction loss
+            self.train_policy = tf.train.RMSPropOptimizer(learning_rate=self.learning_rate, decay=self.rms_decay_rate).minimize(self.loss_actions_dxs_multitask)
         else:
+            # only minimize policy loss
             self.train_policy = tf.train.RMSPropOptimizer(learning_rate=self.learning_rate, decay=self.rms_decay_rate).minimize(self.loss_actions)
-            self.train_model = tf.train.RMSPropOptimizer(learning_rate=.1 * self.learning_rate, decay=self.rms_decay_rate).minimize(self.loss_dxs)
+        self.train_model = tf.train.RMSPropOptimizer(learning_rate=.1 * self.learning_rate, decay=self.rms_decay_rate).minimize(self.loss_dxs)
 
         self.net_session = tf.InteractiveSession()
         tf.global_variables_initializer().run()
@@ -251,10 +244,14 @@ class Agent(object):
             # train policy
             discounted_rewards = self.get_discounted_rewards()
             if discounted_rewards is not None: # don't train on a fully successful episode, because all rewards are 1
-                self.net_session.run(self.train_policy, feed_dict={
-                    self.net_xs: self.history['xs'],
+                feed_dict = {self.net_xs: self.history['xs'],
                     self.net_rewards: discounted_rewards,
-                    self.net_actions: self.history['actions']})
+                    self.net_actions: self.history['actions']}
+                if self.multitask:
+                    dxs = np.asarray(self.history['nxs']) - np.asarray(self.history['xs'])
+                    feed_dict[self.net_dxs] = dxs
+                    #feed_dict[self.net_dxs] = self.history['nxs']
+                self.net_session.run(self.train_policy, feed_dict=feed_dict)
 
             if self.learn_model and not sample_model:
                 # store observation/action trajectory
