@@ -17,7 +17,7 @@ class Agent(object):
             batch_size = 1,
             learning_rate = 0.01,
             rms_decay_rate = 0.99,
-            nb_world_features = 8,  # number of first layer's neurons
+            nb_world_features = 32,  # number of first layer's neurons
             rect_leakiness=0.01,
             learn_model=True,
             sample_model=True,
