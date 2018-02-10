@@ -20,7 +20,7 @@ class Agent(object):
             rms_decay_rate = 0.99,
             nb_world_features = 32,  # number of first layer's neurons
             rect_leakiness=0.01,
-            learn_model=True,
+            learn_model='delta',    # ['none', 'delta', 'absolute']
             sample_model=True,
             model_training_noise=0.1,
             replay_buffer_size=5000,
@@ -28,6 +28,9 @@ class Agent(object):
             random_seed=None):
 
         assert(batch_size == 1) # not yet supported
+
+        learn_model = str(learn_model).lower()
+        assert(learn_model in ['none', 'delta', 'absolute'])
 
         self.batch_size = batch_size
         self.learning_rate = learning_rate
@@ -101,7 +104,12 @@ class Agent(object):
     def estimate_next_observations(self, xs, actions):
         '''returns the nxes (next x estimates)'''
         dxs = self.net_dxes.eval(feed_dict={self.net_xs: xs, self.net_actions: actions})
-        return xs + dxs
+        if self.learn_model == 'delta':
+            return xs + dxs
+        elif self.learn_model == 'absolute':
+            return dxs
+        else:
+            raise RuntimeError('learn_model was set to "%s" while trying to estimate observations' % self.learn_model)
 
     def evaluate_model(self):
         '''plots the observation history, the prediction of next observations and a chain prediction only depending on the first observation'''
@@ -142,7 +150,12 @@ class Agent(object):
             t = np.random.randint(len(self.experience['xs']))
             xs[i] = self.experience['xs'][t]
             actions[i] = self.experience['actions'][t]
-            dxs[i] = self.experience['nxs'][t] - xs[i]
+            if self.learn_model == 'delta':
+                dxs[i] = self.experience['nxs'][t] - xs[i]
+            elif self.learn_model == 'absolute':
+                dxs[i] = self.experience['nxs'][t]
+            else:
+                raise RuntimeError('learn_model was set to "%s" while trying to sample experience' % self.learn_model)
 
         # noise!
         if noise > 0:
@@ -279,7 +292,7 @@ class Agent(object):
                     #feed_dict[self.net_dxs] = self.history['nxs']
                 self.net_session.run(self.train_policy, feed_dict=feed_dict)
 
-            if self.learn_model and not sample_model:
+            if self.learn_model != 'none' and not sample_model:
                 # store observation/action trajectory
                 self.experience['xs'] += self.history['xs']
                 self.experience['actions'] += self.history['actions']
