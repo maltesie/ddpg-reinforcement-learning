@@ -23,7 +23,8 @@ class Agent(object):
             sample_model=True,
             model_training_noise=0.1,
             replay_buffer_size=5000,
-            multitask=False):
+            multitask=False,
+            random_seed=None):
 
         assert(batch_size == 1) # not yet supported
 
@@ -39,6 +40,9 @@ class Agent(object):
         self.multitask = multitask
 
         tf.reset_default_graph()
+
+        if random_seed:
+            tf.set_random_seed(random_seed)
 
         # observation input
         self.net_xs = tf.placeholder(tf.float32, [None, 4], "X")
