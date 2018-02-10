@@ -24,13 +24,16 @@ class Agent(object):
             sample_model=True,
             model_training_noise=0.1,
             replay_buffer_size=5000,
-            multitask=False,
+            multitask='none',       # ['none', 'delta', 'absolute']
             random_seed=None):
 
         assert(batch_size == 1) # not yet supported
 
         learn_model = str(learn_model).lower()
         assert(learn_model in ['none', 'delta', 'absolute'])
+
+        multitask = str(multitask).lower()
+        assert(multitask in ['none', 'delta', 'absolute'])
 
         self.batch_size = batch_size
         self.learning_rate = learning_rate
@@ -75,12 +78,12 @@ class Agent(object):
         self.loss_dxs = tf.reduce_mean(tf.squared_difference(self.net_dxs, self.net_dxes))
 
         # training methods
-        if multitask:
-            # minimize policy and observation prediction loss
-            self.train_policy = tf.train.RMSPropOptimizer(learning_rate=self.learning_rate, decay=self.rms_decay_rate).minimize(self.loss_actions_dxs_multitask)
-        else:
+        if multitask == 'none':
             # only minimize policy loss
             self.train_policy = tf.train.RMSPropOptimizer(learning_rate=self.learning_rate, decay=self.rms_decay_rate).minimize(self.loss_actions)
+        else:
+            # minimize policy and observation prediction loss
+            self.train_policy = tf.train.RMSPropOptimizer(learning_rate=self.learning_rate, decay=self.rms_decay_rate).minimize(self.loss_actions_dxs_multitask)
         self.train_model = tf.train.RMSPropOptimizer(learning_rate=.1 * self.learning_rate, decay=self.rms_decay_rate).minimize(self.loss_dxs)
 
         self.net_session = tf.InteractiveSession()
@@ -286,10 +289,11 @@ class Agent(object):
                 feed_dict = {self.net_xs: self.history['xs'],
                     self.net_rewards: discounted_rewards,
                     self.net_actions: self.history['actions']}
-                if self.multitask:
+                if self.multitask == 'delta':
                     dxs = np.asarray(self.history['nxs']) - np.asarray(self.history['xs'])
                     feed_dict[self.net_dxs] = dxs
-                    #feed_dict[self.net_dxs] = self.history['nxs']
+                elif self.multitask == 'absolute':
+                    feed_dict[self.net_dxs] = self.history['nxs']
                 self.net_session.run(self.train_policy, feed_dict=feed_dict)
 
             if self.learn_model != 'none' and not sample_model:
