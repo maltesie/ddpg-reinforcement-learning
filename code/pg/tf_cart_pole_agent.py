@@ -140,10 +140,11 @@ class Agent(object):
         plt.legend()
         plt.show()
 
-        plt.xlabel('number of episodes')
-        plt.ylabel('model error')
-        plt.plot(self.model_errors)
-        plt.show()
+        if self.model_test_set:
+            plt.xlabel('number of episodes')
+            plt.ylabel('model error')
+            plt.plot(self.model_errors)
+            plt.show()
 
     def sample_experience(self, n, noise=0.):
         '''returns `n` random experience data points, optionally with gaussian noise of
@@ -314,7 +315,8 @@ class Agent(object):
                 if len(self.experience['xs']) >= 1.5 * self.replay_buffer_size:
                     self.forget_experience(self.replay_buffer_size)
 
-                self.model_errors.append(self.get_model_error(*self.model_test_set))
+                if self.model_test_set:
+                    self.model_errors.append(self.get_model_error(*self.model_test_set))
                 # train model on random experience
                 for _ in range(20): # TODO: param: number of updates
                     xs, actions, dxs = self.sample_experience(100, self.model_training_noise) # TODO: param: batch size
