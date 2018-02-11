@@ -24,6 +24,7 @@ class Agent(object):
             sample_model=True,
             model_training_noise=10.0,
             model_training_noise_decay=0.99,
+            model_afunc=None,
             replay_buffer_size=5000,
             multitask='none',       # ['none', 'delta', 'absolute']
             random_seed=None):
@@ -70,7 +71,7 @@ class Agent(object):
 
         # net 2: delta-x estimates (model)
         combined_input = tf.concat([self.net_xs, tf.expand_dims(self.net_actions, axis=1)], axis=1)
-        hidden_layer1 = tf.contrib.layers.fully_connected(combined_input, nb_world_features * 10, lambda x: tf.nn.leaky_relu(x, alpha=self.rect_leakiness))
+        hidden_layer1 = tf.contrib.layers.fully_connected(combined_input, nb_world_features * 10, model_afunc)
         # TODO: maybe second hidden layer
         self.net_dxes = tf.contrib.layers.fully_connected(hidden_layer1, 4, None)
 
