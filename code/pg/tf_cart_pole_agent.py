@@ -18,16 +18,16 @@ class Agent(object):
             batch_size = 1,
             learning_rate = 0.01,
             rms_decay_rate = 0.99,
-            nb_world_features = 32,  # number of first layer's neurons
-            rect_leakiness=0.01,
-            learn_model='delta',    # ['none', 'delta', 'absolute']
-            sample_model=True,
-            model_training_noise=10.0,
-            model_training_noise_decay=0.99,
-            model_afunc=None,
-            replay_buffer_size=5000,
-            multitask='none',       # ['none', 'delta', 'absolute']
-            random_seed=None):
+            nb_world_features = 32,     # number of first layer's neurons
+            rect_leakiness = 0.01,
+            learn_model = 'delta',      # ['none', 'delta', 'absolute']
+            sample_model = True,
+            model_training_noise = 10.0,
+            model_training_noise_decay = 0.99,
+            model_afunc = None,
+            replay_buffer_size = 5000,
+            multitask = 'none',         # ['none', 'delta', 'absolute']
+            random_seed = None):
 
         assert(batch_size == 1) # not yet supported
 
@@ -75,9 +75,10 @@ class Agent(object):
         # TODO: maybe second hidden layer
         self.net_dxes = tf.contrib.layers.fully_connected(hidden_layer1, 4, None)
 
-        # loss functions of the outputs above
+        # policy loss functions
         self.loss_actions = -tf.reduce_mean(self.net_rewards * tf.log(tf.multiply(1 - self.net_actions, 1 - self.net_aps[:, 0]) + tf.multiply(self.net_actions, self.net_aps[:, 0])))
-        self.loss_actions_dxs_multitask = tf.reduce_mean(tf.squared_difference(self.net_dxs, self.net_dxes_multitask)) + self.loss_actions
+        self.loss_actions_dxs_multitask = self.loss_actions + tf.reduce_mean(tf.squared_difference(self.net_dxs, self.net_dxes_multitask))
+        # model loss function
         self.loss_dxs = tf.reduce_mean(tf.squared_difference(self.net_dxs, self.net_dxes))
 
         # training methods

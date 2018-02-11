@@ -27,9 +27,9 @@ def read_trajectories(filename, test_denom=4):
 def train_model(agent, train_set, test_set, batch_size=100, episodes=1000):
     '''samples `batch_size` data points each to do `episodes` model training steps.
        returns model error over time.'''
-    agent.experience['xs'], agent.experience['actions'], agent.experience['nxs'] = train
+    agent.experience['xs'], agent.experience['actions'], agent.experience['nxs'] = train_set
 
-    errors = [agent.get_model_error(*test)]
+    errors = [agent.get_model_error(*test_set)]
 
     for i in range(episodes):
         xs, actions, dxs = agent.sample_experience(batch_size, agent.model_training_noise)
@@ -38,8 +38,9 @@ def train_model(agent, train_set, test_set, batch_size=100, episodes=1000):
             agent.net_actions: actions,
             agent.net_dxs: dxs})
 
-        err = agent.get_model_error(*test)
         agent.model_training_noise *= agent.model_training_noise_decay
+
+        err = agent.get_model_error(*test_set)
         errors.append(err)
 
         if i % 100 == 0:
@@ -61,14 +62,14 @@ if __name__ == '__main__':
     # over how many runs to average per param set
     iterations = 10
 
-    train, test = read_trajectories(trajectories_filename)
+    train, test = read_trajectories(trajectories_filename, 5)
     print('train set: %i, test set: %i' % (len(train[0]), len(test[0])))
 
     for i, params in enumerate(param_sets):
         print('parameters:', params)
         errors = []
         for _ in range(iterations):
-            agent = tf_cart_pole_agent.Agent(**params, random_seed=3141592+iterations)
+            agent = tf_cart_pole_agent.Agent(**params, random_seed=31415926+iterations)
             errors.append(train_model(agent, train, test))
 
         errors = np.asarray(errors)
