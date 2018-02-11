@@ -39,6 +39,7 @@ def train_model(agent, train_set, test_set, batch_size=100, episodes=1000):
             agent.net_dxs: dxs})
 
         err = agent.get_model_error(*test)
+        agent.model_training_noise *= agent.model_training_noise_decay
         errors.append(err)
 
         if i % 100 == 0:

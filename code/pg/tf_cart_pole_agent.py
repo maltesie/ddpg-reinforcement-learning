@@ -22,7 +22,8 @@ class Agent(object):
             rect_leakiness=0.01,
             learn_model='delta',    # ['none', 'delta', 'absolute']
             sample_model=True,
-            model_training_noise=0.1,
+            model_training_noise=10.0,
+            model_training_noise_decay=0.99,
             replay_buffer_size=5000,
             multitask='none',       # ['none', 'delta', 'absolute']
             random_seed=None):
@@ -43,6 +44,7 @@ class Agent(object):
         self.learn_model = learn_model
         self.sample_model = sample_model
         self.model_training_noise = model_training_noise
+        self.model_training_noise_decay = model_training_noise_decay
         self.replay_buffer_size = replay_buffer_size
         self.multitask = multitask
 
@@ -324,6 +326,7 @@ class Agent(object):
                         self.net_xs: xs,
                         self.net_actions: actions,
                         self.net_dxs: dxs})
+                    self.model_training_noise *= self.model_training_noise_decay
 
             # reset history
             self.history.clear()
