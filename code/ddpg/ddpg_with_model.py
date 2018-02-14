@@ -29,41 +29,42 @@ from actionsampler import ActionSampler
 from functions import done_pendulum, reward_pendulum, done_cartpole, reward_cartpole
 
 plot_data = []
+session_prefix = 'average-gp-model-5-eval'
+nb_sessions = 5
+s_nb = 0
+
 
 # ==========================
 #   Training Parameters
 # ==========================
 
+
 # Toggle model use
-use_model = False
+use_model = True
 # Toggle exploration noise
 use_noise = True
 #Model architecture: GP or NN
-M = NN
+M = GP
 # Model pretraining episodes
-model_train_ep = 5
+model_train_ep = 2
 # Model pretraining steps per episode
-model_train_steps = 200
+model_train_steps = 100
 # Number of samples the model uses
-nb_samples = 10
+nb_samples = 500
 # Interval of evaluation and retraining
-nb_ep_eval = 10
+nb_ep_eval = 5
 
 # Maximum episodes run
 MAX_EPISODES = 1000
-# Max episode length
-MAX_EP_STEPS = 200
 # Episodes with noise
 NOISE_MAX_EP = 1000
 # Noise parameters - Ornstein Uhlenbeck
-if use_model: noise_factor = 0.3
-else: noise_factor = 1.
+if use_model: noise_factor = 0.6
+else: noise_factor = 0.6
 DELTA = 0.5 # The rate of change (time)
 SIGMA = 0.5 # Volatility of the stochastic processes
 OU_A = 3. # The rate of mean reversion
 OU_MU = 0. # The long run average interest rate
-# Reward parameters
-REWARD_FACTOR = 0.01 # Total episode reward factor
 # Base learning rate for the Actor network
 ACTOR_LEARNING_RATE = 0.0001
 # Base learning rate for the Critic Network
@@ -81,9 +82,19 @@ RENDER_ENV = False
 # Use Gym Monitor
 GYM_MONITOR_EN = False
 # Gym environment
-ENV_NAME = 'CartPole-v0' # Discrete: Reward factor = 0.1
-#ENV_NAME = 'CartPole-v1' # Discrete: Reward factor = 0.1
-#ENV_NAME = 'Pendulum-v0' # Continuous: Reward factor = 0.01
+#ENV_NAME = 'CartPole-v0' # Discrete: Reward factor = 0.01
+#ENV_NAME = 'CartPole-v1' # Discrete: Reward factor = 0.01
+ENV_NAME = 'Pendulum-v0' # Continuous: Reward factor = 0.001
+# Max episode length and reward factor
+if ENV_NAME == 'Pendulum-v0': 
+    MAX_EP_STEPS = 200
+    REWARD_FACTOR = 0.001
+elif ENV_NAME == 'CartPole-v1': 
+    MAX_EP_STEPS = 500
+    REWARD_FACTOR = 0.01
+elif ENV_NAME == 'CartPole-v0': 
+    MAX_EP_STEPS = 200
+    REWARD_FACTOR = 0.01
 # Directory for storing gym results
 MONITOR_DIR = './results/' + ENV_NAME
 # Directory for storing tensorboard summary results
@@ -92,6 +103,10 @@ RANDOM_SEED = 1234
 # Size of replay buffer
 BUFFER_SIZE = 100000
 MINIBATCH_SIZE = 100
+# Toggle model error plot
+plot_mse = False
+# Toggle predict change
+predict_change = False
 
 # ===========================
 #   Tensorflow Summary Ops
@@ -101,9 +116,9 @@ def build_summaries():
     tf.summary.scalar("Reward", episode_reward)
     episode_ave_max_q = tf.Variable(0.)
     tf.summary.scalar("Qmax", episode_ave_max_q)
-    eval_episodes = tf.Variable(0.)
-    tf.summary.scalar("Evaluation", eval_episodes)
-    summary_vars = [episode_reward, episode_ave_max_q, eval_episodes]
+    max_mse = tf.Variable(0.)
+    tf.summary.scalar("mse", max_mse)
+    summary_vars = [episode_reward, episode_ave_max_q, max_mse]
     summary_ops = tf.summary.merge_all()
 
     return summary_ops, summary_vars
@@ -126,16 +141,14 @@ def train(sess, env, model, actor, critic, noise, reward, discrete):
 
     # Initialize noise
     ou_level = 0.
-
+    
     for i in range(MAX_EPISODES):
         
         ep_reward = 0
         ep_ave_max_q = 0
-
-        # Clear episode buffer
-        episode_buffer = np.empty((0,5), float)
         
-        if i % nb_ep_eval == 0:
+        if i % nb_ep_eval == 0 and use_model:
+            episode_buffer = np.empty((0,5), float)
             observations = [env.reset()]
             actions = []
             rewards_eval = []
@@ -146,21 +159,35 @@ def train(sess, env, model, actor, critic, noise, reward, discrete):
                     ou_level = noise.ornstein_uhlenbeck_level(ou_level)
                     a = a + noise_factor * ou_level
                 if discrete:
-                    action = np.argmax(a)
+                    action = np.argmax(np.abs(a))
                 else:
                     action = a[0]
+                
                 actions.append(action)
                 observation, r, done, info = env.step(action)
+                
                 observations.append(observation)
                 rewards_eval.append(r)
-                if done:
+                
+                episode_buffer = np.append(episode_buffer, [[observations[-2], a, r, done, observations[-1]]], axis=0)
+                
+                if done or t==MAX_EP_STEPS-1:
                     rewards_eval = np.asarray(rewards_eval).reshape(-1,1)
                     model.add_trajectory(np.asarray(observations), np.asarray(actions).reshape(-1,1), rewards_eval)
-                    model.train(nb_samples=nb_samples)
+                    model.train()
+                    
+                    episode_buffer = reward.discount(episode_buffer)
+                    plot_data.append((rewards_eval.sum(), 0.))
+                    for step in episode_buffer:
+                        replay_buffer.add(np.reshape(step[0], (actor.s_dim,)), np.reshape(step[1], (actor.a_dim,)), step[2], \
+                                  step[3], np.reshape(step[4], (actor.s_dim,)))
                     break
             print( '| EVALUATION | Reward: ', rewards_eval.sum())
-        
-        s = env.reset()    
+        # Clear episode buffer
+        episode_buffer = np.empty((0,5), float)
+        s = env.reset()  
+        predicted_state = s
+        mses = []
         for j in range(MAX_EP_STEPS):
             if RENDER_ENV:
                 env.render()
@@ -173,15 +200,18 @@ def train(sess, env, model, actor, critic, noise, reward, discrete):
 
             # Set action for discrete and continuous action spaces
             if discrete:
-                action = np.argmax(a)
+                action = np.argmax(np.abs(a))
             else:
                 action = a[0]
                 
             if not use_model:
                 s2, r, terminal, info = env.step(action)
+                predicted_state, predicted_r, _ = model.predict(predicted_state,action)
+                mses.append(np.sqrt(np.sum((np.asarray(s2)-np.asarray(predicted_state))**2)+(r-predicted_r)**2))
             else:
                 s2, r, terminal = model.predict(s, action)
-
+                actual_state, actual_r, _, _ = env.step(action)
+                mses.append(np.sqrt(np.sum((np.asarray(s2)-np.asarray(actual_state))**2)+(r-actual_r)**2))
             # Choose reward type
             ep_reward += r
 
@@ -230,18 +260,17 @@ def train(sess, env, model, actor, critic, noise, reward, discrete):
                     replay_buffer.add(np.reshape(step[0], (actor.s_dim,)), np.reshape(step[1], (actor.a_dim,)), step[2], \
                                   step[3], np.reshape(step[4], (actor.s_dim,)))
                 
-                plot_data.append((ep_reward, rewards_eval.sum()))
+                plot_data.append((ep_reward, np.mean(mses)))
                 
                 summary = tf.Summary()
                 summary.value.add(tag='Reward', simple_value=float(ep_reward))
                 summary.value.add(tag='Qmax', simple_value=float(ep_ave_max_q / float(j)))
-                summary.value.add(tag='Evaluation', simple_value=float(rewards_eval.sum()))
+                summary.value.add(tag='mse', simple_value=float(np.mean(mses)))
                 summary_writer.add_summary(summary, i)
 
                 summary_writer.flush()
-
-                print('| Reward: %.2i' % int(ep_reward), " | Episode", i, \
-                '| Qmax: %.4f' % (ep_ave_max_q / float(j)))
+                print('| Reward: %.2i' % int(ep_reward), '| Steps: %.2i' % int(j), " | Episode", i, \
+                '| Qmax: %.4f' % (ep_ave_max_q / float(j)), '| Modelerror: ', np.mean(mses))
 
                 break
 
@@ -281,12 +310,15 @@ def main(_):
         reward = Reward(REWARD_FACTOR, GAMMA)
         
         if ENV_NAME == 'Pendulum-v0':
-            model = M(state_dim, done_pendulum)
+            model = M(state_dim, done_pendulum, predict_change=predict_change)
             sampler = ActionSampler(False, action_bounds=[-2.0,2.0])
         elif ENV_NAME == 'CartPole-v0':
-            model = M(state_dim, done_cartpole)
+            model = M(state_dim, done_cartpole, predict_change=predict_change)
             sampler = ActionSampler(True, actions=[0,1])
-        
+        elif ENV_NAME == 'CartPole-v1':
+            model = M(state_dim, done_cartpole, predict_change=predict_change)
+            sampler = ActionSampler(True, actions=[0,1])
+
         for i in range(model_train_ep):
             observations = [env.reset()]
             actions = sampler.sample(model_train_steps)
@@ -300,7 +332,7 @@ def main(_):
             rs = np.asarray(rs)
             observations = np.asarray(observations)
             model.add_trajectory(observations, actions.reshape(-1,1), rs.reshape(-1,1))
-        model.train(nb_samples=nb_samples)
+        model.train()
 
         if GYM_MONITOR_EN:
             if not RENDER_ENV:
@@ -313,17 +345,24 @@ def main(_):
         except KeyboardInterrupt:
             pass
         plot_results(plot_data, model, ENV_NAME, use_model, use_noise, model_train_ep, model_train_steps, nb_samples, nb_ep_eval)
-
+        with open('./results/' + ENV_NAME + '/np_dumps/{}_{}.npy'.format(session_prefix, str(s_nb)), 'wb') as file:
+            np.save(file, np.asarray(plot_data))
         if GYM_MONITOR_EN:
             env.close()
 
 def plot_results(plot_data, model, env_name, use_model, use_noise, model_train_ep, model_train_steps, nb_samples, nb_ep_eval):
     plot_data = np.asarray(plot_data)
-    plt.plot(plot_data[:,0], 'r-', markersize=5, label=u'within model')
-    plt.plot(plot_data[:,1],  'b-', markersize=5, label=u'in environment')
-    plt.xlabel("episode")
-    plt.ylabel("reward")
-    plt.legend(loc='upper left')
+    fig, ax1 = plt.subplots()
+    ax1.plot(plot_data[:,0], 'r-', markersize=5, label=u'within model')
+    ax1.plot(plot_data[:,1],  'b-', markersize=5, label=u'in environment')
+    ax1.set_xlabel('episode')
+    ax1.set_ylabel('reward')
+    ax1.legend(loc='upper left')
+    if plot_mse:
+        ax2 = ax1.twinx()
+        ax2.plot(plot_data[:,2], 'g-', markersize=5, label=u'model mse')
+        ax2.set_ylabel('max. mse', color='g')
+        ax2.legend(loc='up')
     if use_model:
         if use_noise: noise = 'Used exploration noise.' 
         else: noise = 'Without exploration noise.'
@@ -335,5 +374,14 @@ def plot_results(plot_data, model, env_name, use_model, use_noise, model_train_e
     plt.show()
 
 if __name__ == '__main__':
-    tf.app.run()
+    with tf.device('/device:GPU:0'):
+        for nb_sessions in [5, 10]:
+            session_prefix = 'average-gp-model-{}-eval'.format(nb_sessions)
+            for session_nb in range(nb_sessions):
+                s_nb = session_nb
+                plot_data = []
+                try:
+                    tf.app.run()
+                except SystemExit:
+                    pass
     
