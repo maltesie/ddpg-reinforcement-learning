@@ -1,88 +1,37 @@
 # Robotics Project - Model Based RL
 
-## Goal:
+We implemented model based RL with REINFORCE and DDPG. All code is implemented in Python 3.
 
-We want to compare model based RL methods with model free ones on different tasks and develop a system of 
-attributes to distinguish between between them. This could lead to a better understanding of where to use model
-based RL.
+## REINFORCE
 
-Some Pros and Cons to maybe produce the system of atrributes:
+### Requirements
 
+### Usage
 
-Pro model based:
+## DDPG
 
-* learns well from examples, demonstrations
-* more data efficient
+The code is located in the ddpg folder. 
 
+### Requirements
 
-Contra model based:
+A working Python 3 installation or virtual environment is reqired. It has to have followeing site-packages installed, which are all in the pip-repository:
 
-* small model errors can have great effect on policy
-* we have to make assumptions of how the world works to model it
+* tensorflow
+* sklearn
+* numpy
+* scipy
+* matplotlib
+* gym
 
+### Usage
 
-Pro model free:
+All parameters for the training can be set in the ddpg_with_model.py file. Following parameters can be set:
 
-* direct learning of the best policy
-* no assumptions
+* In the meta parameter block you can set a session name and set the number of trainings to be run
+* In the model parameter block one can toggle the use of a model, the model type and model pretraining conditions. 
+* In the training parameter block the exploration noise and training length can be set. 
+* In the utility parameter block the environment can be chosen. 
 
+The code in its current form can only run in the environments CartPole-v0, CartPole-v1 and Pendulum-v0 with a model.
 
-Contra model free:
-
-* less data efficient
-
-
-## Environments:
-
-
-### OpenAI Gym
-
-We use the master branch of the git repository:
-
-https://github.com/openai/gym.git
-
-
-## Methods:
-
-
-### Guided Policy Search:
-
-We use the code provided in this git repository:
-
-https://github.com/cbfinn/gps.git
-
-A detailed instruction with examples can be found here:
-
-http://rll.berkeley.edu/gps/
-
-
-### Relative Entropy Policy Search:
-
-Implementation of the method in python:
-
-https://github.com/rll/rllab/blob/master/rllab/algos/reps.py
-
-from the rllab framework:
-
-https://github.com/rll/rllab
-
-
-### Neural Fitted Q:
-
-Implementation of the method using dropout regularization and convolutional neural networks:
-
-https://github.com/cosmoharrigan/rc-nfq.git
-
-
-### Deep Deterministic Policy Gradients:
-
-We use the following implementation of the method for OpenAI Gym:
-
-https://github.com/stevenpjg/ddpg-aigym.git
-
-
-## Own Implementations:
-
-Our own implementations are located in the /code folder and usage is explained here:
-
-
+To run the training(s) with the set parameters, just execute the file ddpg_with_model.py.
