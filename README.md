@@ -23,7 +23,7 @@ A working Python 3 installation or virtual environment is reqired. It has to hav
 * matplotlib
 * gym
 
-### Usage
+### Set Parameters
 
 All parameters for the training can be set in the ddpg_with_model.py file. Following parameters can be set:
 
@@ -34,4 +34,10 @@ All parameters for the training can be set in the ddpg_with_model.py file. Follo
 
 The code in its current form can only run in the environments CartPole-v0, CartPole-v1 and Pendulum-v0 with a model.
 
+### Run
+
 To run the training(s) with the set parameters, just execute the file ddpg_with_model.py.
+
+### Plot
+
+Plots of the data can be made with the file plot_results.py. The file has to be adjusted to the session name and the amount of trainings.
