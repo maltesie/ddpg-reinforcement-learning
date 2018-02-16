@@ -43,3 +43,30 @@ To run the training(s) with the set parameters, just execute the file ddpg_with_
 Plots of the data can be made with the file plot_results.py. The file has to be adjusted to the session name and the amount of trainings. 
 
 The current file uses the projects results and recreates the graphics used in the presentation and report. The wanted configuration has to be uncommented.
+
+### Disclaimer
+
+The code in the folder ddpg is based on this implementation of DDPG:
+
+https://github.com/liampetti/DDPG
+
+The code was changed and improved in those files:
+
+* ddpg_with_model.py
+
+The code was kept as the original in those files:
+
+* noise.py
+* ddpg.py
+* replaybuffer.py
+* reward.py
+* actor.py
+* critic.py
+
+The code in the  following files was written for this project by Malte Siemers:
+
+* plot_results.py
+* actionsampler.py
+* functions.py
+* nn.py
+* gp.py
