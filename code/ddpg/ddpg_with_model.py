@@ -21,23 +21,24 @@ from noise import Noise
 from reward import Reward
 from actor import ActorNetwork
 from critic import CriticNetwork
-from gym.wrappers.monitoring import Monitor
 
 from gp import GP
 from nn import NN
 from actionsampler import ActionSampler
 from functions import done_pendulum, reward_pendulum, done_cartpole, reward_cartpole
 
-plot_data = []
+
+# ==========================
+#   Meta Parameters
+# ==========================
+
 session_prefix = 'average-gp-model-5-eval'
 nb_sessions = 5
-s_nb = 0
 
 
 # ==========================
-#   Training Parameters
+#   Model Parameters
 # ==========================
-
 
 # Toggle model use
 use_model = True
@@ -53,6 +54,10 @@ model_train_steps = 100
 nb_samples = 500
 # Interval of evaluation and retraining
 nb_ep_eval = 5
+
+# ==========================
+#   Training Parameters
+# ==========================
 
 # Maximum episodes run
 MAX_EPISODES = 1000
@@ -77,11 +82,7 @@ TAU = 0.001
 # ===========================
 #   Utility Parameters
 # ===========================
-# Render gym env during training
-RENDER_ENV = False
-# Use Gym Monitor
-GYM_MONITOR_EN = False
-# Gym environment
+
 #ENV_NAME = 'CartPole-v0' # Discrete: Reward factor = 0.01
 #ENV_NAME = 'CartPole-v1' # Discrete: Reward factor = 0.01
 ENV_NAME = 'Pendulum-v0' # Continuous: Reward factor = 0.001
@@ -107,6 +108,12 @@ MINIBATCH_SIZE = 100
 plot_mse = False
 # Toggle predict change
 predict_change = False
+# Render gym env during training
+RENDER_ENV = False
+# Use Gym Monitor
+GYM_MONITOR_EN = False
+s_nb = 0
+plot_data = []
 
 # ===========================
 #   Tensorflow Summary Ops
@@ -374,7 +381,7 @@ def plot_results(plot_data, model, env_name, use_model, use_noise, model_train_e
     plt.show()
 
 if __name__ == '__main__':
-    with tf.device('/device:GPU:0'):
+    with tf.device('/device:CPU:0'):
         for nb_sessions in [5, 10]:
             session_prefix = 'average-gp-model-{}-eval'.format(nb_sessions)
             for session_nb in range(nb_sessions):
