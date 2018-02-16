@@ -40,4 +40,6 @@ To run the training(s) with the set parameters, just execute the file ddpg_with_
 
 ### Plot
 
-Plots of the data can be made with the file plot_results.py. The file has to be adjusted to the session name and the amount of trainings.
+Plots of the data can be made with the file plot_results.py. The file has to be adjusted to the session name and the amount of trainings. 
+
+The current file uses the projects results and recreates the graphics used in the presentation and report. The wanted configuration has to be uncommented.
