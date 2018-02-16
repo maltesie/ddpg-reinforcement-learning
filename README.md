@@ -70,3 +70,18 @@ The code in the  following files was written for this project by Malte Siemers:
 * functions.py
 * nn.py
 * gp.py
+
+### Recreate Results
+
+To recreate the results of the DDPG part of this project one has to run the file ddpg_with_model.py 10 times. 
+Every time a new session name has to be set. Here are the parameter combinations that lead to the resulting data of this project:
+
+* use_model = False, ENV_NAME = 'Pendulum-v0'
+* use_model = False, ENV_NAME = 'Cartpole-v1'
+* use_model = True,
+* use_model = True,
+* use_model = True,
+* use_model = True,
+* use_model = True,
+* use_model = True,
+* use_model = True,
