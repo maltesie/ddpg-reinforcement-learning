@@ -78,10 +78,11 @@ Every time a new session name has to be set. Here are the parameter combinations
 
 * use_model = False, ENV_NAME = 'Pendulum-v0'
 * use_model = False, ENV_NAME = 'Cartpole-v1'
-* use_model = True,
-* use_model = True,
-* use_model = True,
-* use_model = True,
-* use_model = True,
-* use_model = True,
-* use_model = True,
+* use_model = True, ENV_NAME = 'Pendulum-v0', M = GP, nb_ep_eval = 5
+* use_model = True, ENV_NAME = 'Pendulum-v0', M = GP, nb_ep_eval = 10
+* use_model = True, ENV_NAME = 'Pendulum-v0', M = NN, nb_ep_eval = 5
+* use_model = True, ENV_NAME = 'Pendulum-v0', M = NN, nb_ep_eval = 10
+* use_model = True, ENV_NAME = 'Cartpole-v1', M = GP, nb_ep_eval = 5
+* use_model = True, ENV_NAME = 'Cartpole-v1', M = GP, nb_ep_eval = 10
+* use_model = True, ENV_NAME = 'Cartpole-v1', M = NN, nb_ep_eval = 5
+* use_model = True, ENV_NAME = 'Cartpole-v1', M = NN, nb_ep_eval = 10
