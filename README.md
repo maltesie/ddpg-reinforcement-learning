@@ -106,3 +106,28 @@ To evaluate the model, you first need to create a train/test set of cartpole tra
 `filename` defaults to `cartpole-trajectories.txt`.
 Then run `train_model.py [filename]` to train the model with different parameter sets and plot the evaluation on the test set.
 You can change the parameter sets in the file as you wish.
+
+### Interesting Parameters
+
+The agent parameters default to the values stated in the `Agent` constructor in `tf_cart_pole_agent.py`.
+They can be overwritten in `launch_cartpole.py` or `train_model.py` respectively.
+
+**`learning_rate`**: Directly handed over to a `tf.Optimizer`, shouldn't needed to be changed. But note that model learning rate is `learning_rate / 10`.
+
+nb_world_features: Controlls the neural net width. Model hiddel layer width is `nb_world_features * 10`.
+
+**`rect_leakiness`**: Controlls leaky ReLU leakiness.
+
+**`learn_model`**: Which model to use (none/delta/absolute).
+
+**`sample_model`**: Whether to use the learned model (legancy reasons, sorry).
+
+**`model_training_noise`** and **`model_training_noise_decay`**: Controlls model training noise ratio and decay respectively. Refer to our paper if unclear.
+
+**`model_afunc`**: Activation function of the model net's hidden layer.
+
+**`replay_buffer_size`**: Target number of samples in the model experience replay buffer. The buffer gets filtered down wrt. model error as soon as it exceeds `replay_buffer_size * 1.5` entries.
+
+**`multitask`**: Which model to use for multitask-learning the policy (none/delta/absolute).
+
+**`random_seed`**: Tensorflow seed to controll weight initialization.
