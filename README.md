@@ -2,19 +2,13 @@
 
 We implemented model based RL with REINFORCE and DDPG. All code is implemented in Python 3.
 
-## REINFORCE
-
-### Requirements
-
-### Usage
-
 ## DDPG
 
-The code is located in the ddpg folder. 
+The code is located in the `ddpg` folder.
 
 ### Requirements
 
-A working Python 3 installation or virtual environment is reqired. It has to have followeing site-packages installed, which are all in the pip-repository:
+A working Python 3 installation or virtual environment is reqired. It has to have following site-packages installed, which are all in the pip-repository:
 
 * tensorflow
 * sklearn
@@ -25,22 +19,22 @@ A working Python 3 installation or virtual environment is reqired. It has to hav
 
 ### Set Parameters
 
-All parameters for the training can be set in the ddpg_with_model.py file. Following parameters can be set:
+All parameters for the training can be set in the `ddpg_with_model.py` file. Following parameters can be set:
 
 * In the meta parameter block you can set a session name and set the number of trainings to be run
-* In the model parameter block one can toggle the use of a model, the model type and model pretraining conditions. 
-* In the training parameter block the exploration noise and training length can be set. 
-* In the utility parameter block the environment can be chosen. 
+* In the model parameter block one can toggle the use of a model, the model type and model pretraining conditions.
+* In the training parameter block the exploration noise and training length can be set.
+* In the utility parameter block the environment can be chosen.
 
 The code in its current form can only run in the environments CartPole-v0, CartPole-v1 and Pendulum-v0 with a model.
 
 ### Run
 
-To run the training(s) with the set parameters, just execute the file ddpg_with_model.py.
+To run the training(s) with the set parameters, just execute the file `ddpg_with_model.py`.
 
 ### Plot
 
-Plots of the data can be made with the file plot_results.py. The file has to be adjusted to the session name and the amount of trainings. 
+Plots of the data can be made with the file `plot_results.py`. The file has to be adjusted to the session name and the amount of trainings.
 
 The current file uses the projects results and recreates the graphics used in the presentation and report. The wanted configuration has to be uncommented.
 
@@ -73,7 +67,7 @@ The code in the  following files was written for this project by Malte Siemers:
 
 ### Recreate Results
 
-To recreate the results of the DDPG part of this project one has to run the file ddpg_with_model.py 10 times. 
+To recreate the results of the DDPG part of this project one has to run the file `ddpg_with_model.py` 10 times.
 Every time a new session name has to be set. Here are the parameter combinations that lead to the resulting data of this project:
 
 * use_model = False, ENV_NAME = 'Pendulum-v0'
@@ -86,3 +80,29 @@ Every time a new session name has to be set. Here are the parameter combinations
 * use_model = True, ENV_NAME = 'Cartpole-v1', M = GP, nb_ep_eval = 10
 * use_model = True, ENV_NAME = 'Cartpole-v1', M = NN, nb_ep_eval = 5
 * use_model = True, ENV_NAME = 'Cartpole-v1', M = NN, nb_ep_eval = 10
+
+## REINFORCE
+
+The code is located in the `pg` folder.
+
+### Requirements
+
+Python 3:
+* tensorflow
+* numpy
+* matplotlib
+* gym
+
+### Usage
+
+For a demo, run `launch_cartpole.py demo`.
+
+To evaluate a parameter set, define it in the launch file at `param = { ... }` and run `launch_cartpole.py evaluate`.
+This will create a file called `eval-scores` following the parameters ending with `.txt` containing the (hopefully increasing) rewards of one training run per line in a list.
+You can plot these files with `plot_eval.py <files> 100` assuming you did not change the batch size.
+
+To evaluate the model, you first need to create a train/test set of cartpole trajectories with `gen_trajectories.py [samples_per_dimension [filename]]`.
+`samples_per_dimension` defines the number of equally sized divisions in which the interval of each dimension is split into and defaults to 4, resulting in 256 trajectories.
+`filename` defaults to `cartpole-trajectories.txt`.
+Then run `train_model.py [filename]` to train the model with different parameter sets and plot the evaluation on the test set.
+You can change the parameter sets in the file as you wish.
