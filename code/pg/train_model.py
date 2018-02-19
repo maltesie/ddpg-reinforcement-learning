@@ -1,3 +1,4 @@
+import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 import time, sys, json
@@ -52,12 +53,34 @@ def train_model(agent, train_set, test_set, batch_size=100, episodes=1000):
 
 
 if __name__ == '__main__':
-    param_sets = [{'model_training_noise': 0},
-            {'model_training_noise': 1.0},
-            {'model_training_noise': 2.0},
-            {'model_training_noise': 3.0}]
+    # param_sets = [{'model_training_noise': 0},
+    #         {'model_training_noise': 1.0},
+    #         {'model_training_noise': 2.0},
+    #         {'model_training_noise': 3.0}]
 
-    trajectories_filename = 'cartpole-trajectories.txt'
+    # param_sets = [{'model_training_noise': 0},
+    #         {'model_training_noise': 3.0},
+    #         {'model_training_noise': 5.0},
+    #         {'model_training_noise': 10., 'model_training_noise_decay': 0.99}]
+
+    # lrelu = lambda x: tf.nn.leaky_relu(x, alpha=0.01)
+    # param_sets = [{'model_training_noise': 2.0, 'model_training_noise_decay': 1.0, 'model_afunc': tf.nn.relu, 'learn_model': 'delta'},
+    #         {'model_training_noise': 2.0, 'model_training_noise_decay': 1.0, 'model_afunc': tf.nn.relu, 'learn_model': 'absolute'}]
+
+    # param_sets = [{'learn_model': 'delta', 'rect_leakiness': 0.0},
+    #         {'learn_model': 'delta', 'rect_leakiness': 0.2},
+    #         {'learn_model': 'delta', 'rect_leakiness': 1.0},
+    #         {'learn_model': 'delta', 'rect_leakiness': 1.5}]
+
+    param_sets = [{'model_afunc': tf.nn.relu},
+            {'model_afunc': tf.nn.sigmoid},
+            {'model_afunc': tf.nn.tanh},
+            {'model_afunc': None}]
+
+    try:
+        trajectories_filename = sys.argv[1]
+    except Exception as e:
+        trajectories_filename = 'cartpole-trajectories.txt'
 
     # over how many runs to average per param set
     iterations = 10
@@ -76,8 +99,10 @@ if __name__ == '__main__':
         stderr = errors.std(axis=0, ddof=1) / np.sqrt(errors.shape[0])
         mean_error = np.mean(errors, axis=0)
 
-        #label = ' '.join([str(k) + '=' + str(v) for k, v in sorted(params.items())])
-        label = 'η=%.1f' % params['model_training_noise']
+        label = ' '.join([str(k) + '=' + str(v) for k, v in sorted(params.items())])
+        #label = 'η=%.1f' % params['model_training_noise'] + ((' γ=%f' % params['model_training_noise_decay']).rstrip('0') if 'model_training_noise_decay' in params else '')
+        #label = params['learn_model']
+        #label = ('α=%.2f' % params['rect_leakiness']).rstrip('0')
         plt.plot(mean_error, label=label, color=colors[i])
         #plt.errorbar(range(mean_error.shape[0]), mean_error, stderr, color=colors[i])
 

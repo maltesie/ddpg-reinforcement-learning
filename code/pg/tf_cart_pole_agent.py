@@ -181,7 +181,6 @@ class Agent(object):
         stds = np.std(nxs, axis=0)
         nxs /= stds
         nxes /= stds
-        # find candidates with lowest error
         return np.mean((nxs - nxes) ** 2)
 
     def forget_experience(self, target_size):
@@ -286,7 +285,7 @@ class Agent(object):
                 self.history['rewards'].append(reward)
                 self.history['nxs'].append(observation)
 
-            # if (self.nb_games) % 100 == 0 and not sample_model:
+            # if self.learn_model != 'none' and (self.nb_games % 100 == 0) and not sample_model:
             #     self.evaluate_model()
 
             if sample_model:

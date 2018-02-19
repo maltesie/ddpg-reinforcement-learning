@@ -31,6 +31,8 @@ def plot(filenames, step_size):
         plt.plot(X, scores, color=colors[i], label=label)
         plt.errorbar(X, scores, stderr, color=colors[i])
     plt.legend()
+    plt.xlabel('trained episodes')
+    plt.ylabel('average reward')
     plt.show()
 
 

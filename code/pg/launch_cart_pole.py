@@ -1,6 +1,7 @@
 import gym
 import numpy as np
 import time, sys
+import matplotlib.pyplot as plt
 
 #from np_cart_pole_agent import Agent
 from tf_cart_pole_agent import Agent
@@ -17,6 +18,9 @@ else:
 env = gym.make('CartPole-v1')
 
 # hyperparameters
+# multitask example
+#param = {'learn_model': 'none', 'sample_model': False, 'multitask': 'delta'}
+# this is another example actually not overwriting anything because it's the defaults
 param = {'learn_model': 'delta', 'sample_model': True, 'multitask': 'none'}
 
 print('parameters:', param)
@@ -49,7 +53,6 @@ if mode == 'demo':
         print('-> %i steps' % nb_steps)
 
 elif mode == 'evaluate':
-    import matplotlib.pyplot as plt
 
     # instances to train and average
     nb_trainings = 100
